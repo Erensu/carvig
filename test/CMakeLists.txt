@@ -7,14 +7,9 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_BUILD_TYPE Debug)
 
 set(CMAKE_CXX_FLAGS "-std=c++11 -O0 -fPIC")
-set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 set(CMAKE_CXX_FLAGS "-msse3")
 set(CMAKE_C_FLAGS "-msse3")
 set(CMAKE_C_FLAGS "-mavx")
-
-if("${CMAKE_BUILD_TYPE}" STREQUAL "")
-    SET(CMAKE_BUILD_TYPE "Release")
-endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
@@ -34,20 +29,10 @@ include_directories(
         ${PROJECT_SOURCE_DIR}/include/vision
         ${EIGEN3_INCLUDE_DIR}
 )
-file(GLOB SRC_FILES "src/ins-gnss/*.cc" "src/ins-gnss/rcv/*.cc")
-file(GLOB VISION_SRC_FILES "src/vision/*.cc")
+# Test
+add_executable(test_m39_mix_data test_m39_mix_data.cc)
+target_link_libraries(test_m39_mix_data carvig)
 
-add_subdirectory(src/vision/fast)
 
-add_library(carvig ${SRC_FILES})
-target_link_libraries(carvig blas lapack z pthread)
 
-add_library(vision ${VISION_SRC_FILES})
-target_link_libraries(vision)
-
-set_target_properties(carvig PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
-                      ${PROJECT_SOURCE_DIR}/lib)
-
-# add test
-add_subdirectory(test)
 

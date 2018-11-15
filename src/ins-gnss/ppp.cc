@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* ppp.c : precise point positioning
+* ppp.cc : precise point positioning
 *
 * options : -DIERS_MODEL  use IERS tide model
 *           -DOUTSTAT_AMB output ambiguity parameters to solution status
@@ -1406,7 +1406,9 @@ static void update_stat(rtk_t *rtk, const obsd_t *obs, int n, int stat)
     }
     for (i=0;i<MAXSAT;i++) for (j=0;j<opt->nf;j++) {
         if (rtk->ssat[i].slip[j]&3) rtk->ssat[i].slipc[j]++;
-        if (rtk->ssat[i].fix[j]==2&&stat!=SOLQ_FIX) rtk->ssat[i].fix[j]=1;
+        if (rtk->ssat[i].fix[j]==2&&stat!=SOLQ_FIX) {
+            rtk->ssat[i].fix[j]=1;
+        }
     }
 }
 /* test hold ambiguity -------------------------------------------------------*/

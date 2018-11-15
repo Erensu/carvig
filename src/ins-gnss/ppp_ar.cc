@@ -417,7 +417,6 @@ static int fix_amb_ILS(rtk_t *rtk, int *sat1, int *sat2, int *NW, int n)
     stat=fix_sol(rtk,sat1,sat2,NC,m);
 
     free(B1); free(N1); free(D); free(E); free(Q); free(NC);
-
     return stat;
 }
 /* resolve integer ambiguity for ppp -----------------------------------------*/

@@ -2752,6 +2752,7 @@ EXPORT int pppcorr_trop(const pppcorr_t *corr, gtime_t time, const double *pos,
                         double *ztd, double *std);
 EXPORT int pppcorr_stec(const pppcorr_t *corr, gtime_t time, const double *pos,
                         double *ion, double *std);
+
 /* stream server functions ---------------------------------------------------*/
 EXPORT void strsvrinit (strsvr_t *svr, int nout);
 EXPORT int  strsvrstart(strsvr_t *svr, int *opts, int *strs, char **paths,
@@ -2877,6 +2878,9 @@ EXPORT int addgmea(gmeas_t *gmeas, const gmea_t *data);
 EXPORT int savegmeas(insstate_t *ins,const sol_t *sol,const gmea_t *gmea);
 EXPORT int chksdri(const double *vel,int n);
 EXPORT int rechkatt(insstate_t *ins,const imud_t *imu);
+
+EXPORT int get_m39_img(const char *dir,const uint64_t fts,uint64_t ftns,
+                       char *imgfile);
 
 EXPORT int detstaticw(const insstate_t *ins,const imud_t *imu,int n,const insopt_t *opt);
 EXPORT int detstatic_GLRT(const imud_t *imu,int n,const insopt_t *opt,const double *pos);
