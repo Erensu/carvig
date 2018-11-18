@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* rtkpos_gsi.c : precise positioning for GSI experment
+* ar.cc : ambiguity resolution functions
 *
 * version : $Revision: 1.1 $ $Date: 2008/07/17 21:48:06 $
 * history : 2012/02/03 1.0  new

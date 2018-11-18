@@ -37,7 +37,8 @@ include_directories(
 file(GLOB SRC_FILES "src/ins-gnss/*.cc" "src/ins-gnss/rcv/*.cc")
 file(GLOB VISION_SRC_FILES "src/vision/*.cc")
 
-add_subdirectory(src/vision/fast)
+add_subdirectory(src/vision/libfast)
+add_subdirectory(src/vision/libsurf)
 
 add_library(carvig ${SRC_FILES})
 target_link_libraries(carvig blas lapack z pthread)

@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* ephemeris.c : satellite ephemeris and clock functions
+* ephemeris.cc : satellite ephemeris and clock functions
 *
 * references :
 *     [1] IS-GPS-200D, Navstar GPS Space Segment/Navigation User Interfaces,

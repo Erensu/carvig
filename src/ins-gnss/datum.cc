@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* datum.c : datum transformation
+* datum.cc : datum transformation
 *
 * version : $Revision: 1.1 $ $Date: 2008/07/17 21:48:06 $
 * history : 2007/02/08 1.0 new

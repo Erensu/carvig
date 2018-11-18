@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* gis.c: GIS data functions
+* gis.cc: GIS data functions
 *
 * references:
 *     [1] ESRI Shapefile Technical Description, An ESRI White Paper, July, 1998

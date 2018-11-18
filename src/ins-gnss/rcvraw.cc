@@ -1019,8 +1019,7 @@ extern int input_raw(raw_t *raw, int format, unsigned char data)
         case STRFMT_UBXSOL:return input_ubxsol(raw,data);
         case STRFMT_M39  : return input_m39   (raw,data);
         case STRFMT_RINEX_RT: return input_rinex  (raw,data);
-        case STRFMT_M39MIX  : return input_m39_mix(raw,data);
-
+        case STRFMT_M39MIX  : return input_m39_mix  (raw,data);
         case STRFMT_OEM6_SOL: return input_oem6_sol (raw,data);
         case STRFMT_OEM6_POSE:return input_oem6_pose(raw,data);
         case STRFMT_OEM6_RAW: return input_oem6_raw (raw,data);

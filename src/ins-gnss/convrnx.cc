@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* convrnx.c : rinex translator for rtcm and receiver raw data log
+* convrnx.cc : rinex translator for rtcm and receiver raw data log
 *
 * version : $Revision: 1.2 $ $Date: 2008/07/17 21:48:06 $
 * history : 2009/04/10 1.0  new

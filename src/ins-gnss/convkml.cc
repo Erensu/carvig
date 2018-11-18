@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* convkml.c : google earth kml converter
+* convkml.cc : google earth kml converter
 *
 * references :
 *     [1] Open Geospatial Consortium Inc., OGC 07-147r2, OGC(R) KML, 2008-04-14
