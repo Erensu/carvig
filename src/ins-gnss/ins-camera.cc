@@ -63,7 +63,7 @@ extern void distortradtan(const cam_t *cam,const double *in,double *out,double *
  * return: 1 (ok) or 0 (fail)
  * --------------------------------------------------------------------------*/
 extern int undistortradtan(const cam_t *cam,const double *in,double *out,
-                            double *J)
+                           double *J)
 {
     double ybar[2],ytmp[2],F[4],e[2],du[2];
     double T[4],E[2];

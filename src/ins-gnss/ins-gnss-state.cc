@@ -48,8 +48,7 @@ extern int xnOa(const insopt_t *opt) {return ((opt)->estodoa?3:0);}
 /* get number of misalignment estimate states of camera to imu body----------*/
 extern int xnCm(const insopt_t *opt)
 {
-    return (opt)->gopt?((prcopt_t*)(opt)->gopt)->mode==PMODE_INS_LVO
-           &&opt->voopt.estmac?3:0:0;
+    return 0;
 }
 /* get number of misalignemnt estimate states of b-frame to v-frame----------*/
 extern int xnVm(const insopt_t *opt)

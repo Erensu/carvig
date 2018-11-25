@@ -32,19 +32,14 @@ include_directories(
         ${PROJECT_SOURCE_DIR}
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/vision
+        ${PROJECT_SOURCE_DIR}/src/ins-gnss/rcv
         ${EIGEN3_INCLUDE_DIR}
 )
 file(GLOB SRC_FILES "src/ins-gnss/*.cc" "src/ins-gnss/rcv/*.cc")
-file(GLOB VISION_SRC_FILES "src/vision/*.cc")
-
-add_subdirectory(src/vision/libfast)
-add_subdirectory(src/vision/libsurf)
 
 add_library(carvig ${SRC_FILES})
-target_link_libraries(carvig blas lapack z pthread)
-
-add_library(vision ${VISION_SRC_FILES})
-target_link_libraries(vision)
+target_link_libraries(carvig blas lapack z pthread
+                      /usr/local/lib/libpng.so)
 
 set_target_properties(carvig PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
                       ${PROJECT_SOURCE_DIR}/lib)

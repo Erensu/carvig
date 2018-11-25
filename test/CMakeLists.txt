@@ -33,8 +33,9 @@ include_directories(
 add_executable(test_m39_mix_data test_m39_mix_data.cc)
 target_link_libraries(test_m39_mix_data carvig)
 
-add_executable(test_klt test_klt.cc)
-target_link_libraries(test_klt carvig)
+add_executable(test_vo_mono test_vo_mono.cc)
+target_link_libraries(test_vo_mono carvig)
+
 
 
 

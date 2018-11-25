@@ -70,7 +70,7 @@ extern "C"{
 #define LAPACK
 #define TRACE                           /* trace information for debug */
 #define TRACE_INS     1                 /* trace ins updates information */
-#define TRACE_STDERR  0                 /* trace information to stderr if set */
+#define TRACE_STDERR  1                 /* trace information to stderr if set */
 #define VIG_TRACE_MAT 1                 /* trace matrix for debugs */
 #define MAXBUFF     4096                /* size of line buffer */
 #define MAXHIST     256                 /* size of history buffer */
@@ -306,6 +306,16 @@ extern "C"{
 #define FREQTYPE_L8 0x20                /* frequency type: E5(a+b) */
 #define FREQTYPE_L9 0x40                /* frequency type: S */
 #define FREQTYPE_ALL 0xFF               /* frequency type: all */
+
+#define FEAT_CREATE   0                 /* feature point status: created */
+
+#define KLT_INIT              1         /* KLT track status: initial */
+#define KLT_TRACKED           0         /* KLT track status: tracked */
+#define KLT_NOT_FOUND        -1         /* KLT track status: not found */
+#define KLT_SMALL_DET        -2         /* KLT track status: small motion */
+#define KLT_MAX_ITERATIONS   -3         /* KLT track status: max iterations */
+#define KLT_OOB              -4         /* KLT track status: out of border */
+#define KLT_LARGE_RESIDUE    -5         /* KLT track status: large residue */
 
 #define CODE_NONE   0                   /* obs code: none or unknown */
 #define CODE_L1C    1                   /* obs code: L1C/A,G1C/A,E1C (GPS,GLO,GAL,QZS,SBS) */
@@ -701,6 +711,11 @@ extern "C"{
 #define FILEPATHSEP '/'
 #endif
 
+/* FEATURE_FWD_MATCH <BR> FEATURE_BCK_MATCH <BR> FEATURE_MDL_MATCH ----------*/
+enum feature_match_type {
+    FEATURE_FWD_MATCH,
+    FEATURE_BCK_MATCH,
+};
 /* type definitions ----------------------------------------------------------*/
 typedef struct {                /* time struct */
     time_t time;                /* time (s) expressed by standard time_t */
@@ -715,6 +730,81 @@ typedef struct {                /* camera model struct type */
     double p1,p2,s1,s2,s3,s4;
     double K[9];                /* intrinsic parameter matrix */
 } cam_t;
+
+typedef struct feature {        /* feature data type */
+    gtime_t time;               /* feature point extract time */
+    double u,v;                 /* pixel u,v coord */
+    long int id;                /* id of feature point */
+    int valid,status;           /* valid flag of feature/feature track status*/
+} feat_data_t;
+
+typedef struct trackd {         /* feature points track record */
+    gtime_t ts,te;              /* start/end timestamp */
+    int n,nmax;                 /* number and max number of feature points */
+    int uid;                    /* a unique identifier of this track */
+    struct feature *data;       /* track feature data */
+} trackd_t;
+
+typedef struct track {          /* store all feature track data type */
+    int n,nmax;                 /* number and max number of track data */
+    trackd_t *data;             /* track data */
+} track_t;
+
+typedef struct {                /* bucketing parameters */
+    int nmax;                   /* maximal number of features per bucket */
+    double w;                   /* width of bucket */
+    double h;                   /* height of bucket */
+} bucketopt_t;
+
+typedef struct {                /* camera parameters (all are mandatory/need to be supplied) */
+    double f,fu,fv;             /* focal length (in pixels) */
+    double cu;                  /* principal point (u-coordinate) */
+    double cv;                  /* principal point (v-coordinate) */
+    double k1,k2,k3,k4;         /* camera radial tangential distortion coefficients */
+} calib_t;
+
+typedef struct {                /* image data type */
+    gtime_t time;               /* data time */
+    int w,h;                    /* width and height of image */
+    unsigned char *data;        /* image data buffer */
+} img_t;
+
+typedef struct {                /* visual odometry matching options */
+    int img_w,img_h;            /* image width and height in pixel */
+    int nms_n;                  /* non-max-suppression: min. distance between maxima (in pixels) */
+    int nms_tau;                /* non-max-suppression: interest point peakiness threshold */
+    int match_binsize;          /* matching bin width/height (affects efficiency only) */
+    int match_radius;           /* matching radius (du/dv in pixels) */
+    int match_disp_tol;         /* dv tolerance for stereo matches (in pixels) */
+    int outlier_disp_tol;       /* outlier removal: disparity tolerance (in pixels) */
+    int outlier_flow_tol;       /* outlier removal: flow tolerance (in pixels) */
+    int multi_stage;            /* 0=disabled,1=multistage matching (denser and faster) */
+    int half_res;               /* 0=disabled,1=match at half resolution, refine at full resolution */
+    int refine;                 /* refinement (0=none,1=pixel,2=sub-pixel) */
+    double f,fu,fv,cu,cv,base;  /* calibration parameters (only for match prediction) */
+    bucketopt_t bucket;         /* bucketing parameters */
+} matchopt_t;
+
+typedef struct match_point {    /* match feature point type */
+    float up,vp;                /* u,v-coordinates in previous image */
+    float uc,vc;                /* u,v-coordinates in current image */
+    int id,ip,ic;               /* feature id/feature index in precious/current image(for tracking) */
+    int kltstat;                /* KLT track status (if KLT enable) */
+} match_point_t;
+
+typedef struct match_set {      /* store all matched feature points */
+    int n,nmax;                 /* max number and number of matched points */
+    match_point_t *data;        /* matched points data */
+} match_set_t;
+
+typedef struct {                /* match struct type */
+    gtime_t time;               /* match time */
+    img_t Ip,Ic;                /* precious/current image data */
+    match_set_t mp_dense;       /* dense macthed feature points data */
+    match_set_t mp_sparse;      /* sparse macthed feature points data */
+    match_set_t mp_bucket;      /* bucket matched feature points data */
+    matchopt_t opt;             /* matched options */
+} match_t;
 
 typedef struct {                /* observation data record */
     gtime_t time;               /* receiver sampling time (GPST) */
@@ -989,51 +1079,15 @@ typedef struct {            /* odometry options types */
     double ostd;            /* odometry standard deviation for ins and odometry coupled */
 } odopt_t;
 
-typedef struct {                /* bucketing parameters */
-    int nmax;                   /* maximal number of features per bucket */
-    double w;                   /* width of bucket */
-    double h;                   /* height of bucket */
-} bucketopt_t;
-
-typedef struct {                /* camera parameters (all are mandatory/need to be supplied) */
-    double f,fu,fv;             /* focal length (in pixels) */
-    double cu;                  /* principal point (u-coordinate) */
-    double cv;                  /* principal point (v-coordinate) */
-    double k1,k2,k3,k4;         /* camera radial tangential distortion coefficients */
-} calib_t;
-
-typedef struct {                /* visual odometry matching options */
-    int nms_n;                  /* non-max-suppression: min. distance between maxima (in pixels) */
-    int nms_tau;                /* non-max-suppression: interest point peakiness threshold */
-    int match_binsize;          /* matching bin width/height (affects efficiency only) */
-    int match_radius;           /* matching radius (du/dv in pixels) */
-    int match_disp_tol;         /* dv tolerance for stereo matches (in pixels) */
-    int outlier_disp_tol;       /* outlier removal: disparity tolerance (in pixels) */
-    int outlier_flow_tol;       /* outlier removal: flow tolerance (in pixels) */
-    int multi_stage;            /* 0=disabled,1=multistage matching (denser and faster) */
-    int half_res;               /* 0=disabled,1=match at half resolution, refine at full resolution */
-    int refine;                 /* refinement (0=none,1=pixel,2=subpixel) */
-    double f,fu,fv,cu,cv,base;  /* calibration parameters (only for match prediction) */
-} matchopt_t;
-
 typedef struct {            /* visual odometry aid ins options (here for rectified image) */
     matchopt_t match;       /* feature match options */
-    bucketopt_t bucket;     /* bucketing parameters */
     calib_t calib;          /* camera parameters */
     double height;          /* camera height above ground (meters) */
-    double base;            /* baseline (meters) for stereo camera */
-    double outlier_flow_thres; /* outlier removal: flow tolerance (in pixels) */
     double inlier_thres;    /* fundamental matrix inlier threshold */
     double motion_thres;    /* directly return false on small motions */
-    double lever[3];        /* lever arm of camera to imu body frame (m) */
-    double Ccb[9],rpy[3];   /* dcm/euler-attitude (roll,pitch,yaw) of camera to imu body frame */
     double hz;              /* camera frame update frequency */
-    bool   reweighting;     /* lower border weights (more robust to calibration errors) */
     int    ransac_iters;    /* number of RANSAC iterations */
-    int    mode;            /* visual odometry mode (1: mono,2: stereo) */
-    int    detect_method;   /* detect feature points method */
-    int    estmac;          /* estimate misalignment of camera to imu body */
-} voaid_t;
+} voopt_t;
 
 typedef struct {            /* magnetometer options type */
     double sx,sy,sz;        /* magnetometer data scale factor */
@@ -1121,7 +1175,7 @@ typedef struct {            /* ins options type */
     ins_align_t align;      /* ins navigation initial alignment options */
     ins_zv_t zvopt;         /* ins zero velocity detector options */
     odopt_t odopt;          /* odometry options */
-    voaid_t voopt;          /* visual odometry aid ins options */
+    voopt_t voopt;          /* visual odometry aid ins options */
     magopt_t magopt;        /* magnetometer options */
     void *gopt;             /* gnss-rtk options */
 } insopt_t;
@@ -2294,8 +2348,11 @@ EXPORT void matprint (const double *A, int n, int m, int p, int q);
 EXPORT void matfprint(const double *A, int n, int m, int p, int q, FILE *fp);
 
 EXPORT void matt(const double *A,int n,int m,double *At);
-EXPORT void svd(const double *A,int m,int n,double *U,double *W,double *V);
+EXPORT int svd(const double *A,int m,int n,double *U,double *W,double *V);
 EXPORT void matpow(const double *A,int m,int p,double *B);
+EXPORT void dialog(const double *v,int n,double *D);
+EXPORT void mat2dmat(const double *a,double **b,int m,int n);
+EXPORT void dmat2mat(double **a,double *b,int m,int n);
 
 EXPORT void asi_blk_mat(double *A,int m,int n,const double *B,int p ,int q,
                         int isr,int isc);
@@ -3073,6 +3130,45 @@ EXPORT int showmsg(char *format,...);
 EXPORT void settspan(gtime_t ts, gtime_t te);
 EXPORT void settime(gtime_t time);
 EXPORT void none(void);
+
+/* image filter functions-----------------------------------------------------*/
+EXPORT void blob5x5(const uint8_t* in, int16_t* out, int w, int h);
+EXPORT void checkerboard5x5(const uint8_t* in, int16_t* out, int w, int h);
+EXPORT void sobel5x5(const uint8_t* in, uint8_t* out_v, uint8_t* out_h,
+                     int w, int h);
+EXPORT int initimg(img_t *data,int w,int h,gtime_t time);
+EXPORT void freeimg(img_t *data);
+
+/* match feature points functions---------------------------------------------*/
+EXPORT int matchfeats(match_t *pmatch,const img_t *img);
+EXPORT void init_match(match_t *match,const matchopt_t *opt);
+EXPORT void free_match(match_t *match);
+EXPORT void free_match_set(match_set_t *mset);
+
+/* visual odometry estimator--------------------------------------------------*/
+EXPORT int estmonort(const voopt_t *opt,const match_set_t *feat,double *Tr);
+
+/* pgm file read/write--------------------------------------------------------*/
+EXPORT void ppmWriteFileRGB(char *fname, unsigned char *redimg,
+                            unsigned char *greenimg,unsigned char *blueimg,
+                            int ncols, int nrows);
+EXPORT void ppmWrite(FILE *fp,unsigned char *redimg,unsigned char *greenimg,
+                     unsigned char *blueimg,
+                     int ncols, int nrows);
+EXPORT void pgmWriteFile(char *fname, unsigned char *img, int ncols,
+                         int nrows);
+EXPORT void pgmWrite(FILE *fp,unsigned char *img, int ncols, int nrows);
+EXPORT unsigned char* pgmReadFile(char *fname,unsigned char *img,
+                                  int *ncols, int *nrows);
+
+EXPORT unsigned char* pgmRead(FILE *fp,unsigned char *img,
+                              int *ncols, int *nrows);
+
+/* klt track-----------------------------------------------------------------*/
+EXPORT void initklt();
+EXPORT void freeklt();
+EXPORT int kltstatus(match_point_t *matchp,const img_t *pimg,const img_t *cimg,
+                     const voopt_t *opt);
 
 #ifdef __cplusplus
 }

@@ -24,6 +24,7 @@
 *           2017/06/14  1.11 add out-outvel
 *-----------------------------------------------------------------------------*/
 #include <carvig.h>
+#include <include/carvig.h>
 
 /* system options buffer -----------------------------------------------------*/
 static prcopt_t prcopt_;
@@ -332,16 +333,9 @@ EXPORT opt_t insopts[]={
     {"ins-vo-aid-inlier-thres", 1, (void *)&prcopt_.insopt.voopt.inlier_thres,"" },
     {"ins-vo-aid-motion-thres", 1, (void *)&prcopt_.insopt.voopt.motion_thres,"" },
     {"ins-vo-aid-ransac-iters", 0, (void *)&prcopt_.insopt.voopt.ransac_iters,"" },
-    {"ins-vo-aid-lever1",       1, (void *)&prcopt_.insopt.voopt.lever[0],    "" },
-    {"ins-vo-aid-lever2",       1, (void *)&prcopt_.insopt.voopt.lever[1],    "" },
-    {"ins-vo-aid-lever3",       1, (void *)&prcopt_.insopt.voopt.lever[2],    "" },
-    {"ins-vo-aid-rpy1",         1, (void *)&prcopt_.insopt.voopt.rpy[0],      "" },
-    {"ins-vo-aid-rpy2",         1, (void *)&prcopt_.insopt.voopt.rpy[1],      "" },
-    {"ins-vo-aid-rpy3",         1, (void *)&prcopt_.insopt.voopt.rpy[2],      "" },
-    {"ins-vo-aid-mode",         0, (void *)&prcopt_.insopt.voopt.mode,        "" },
-    {"ins-vo-aid-bucket-w",     1, (void *)&prcopt_.insopt.voopt.bucket.w,    "" },
-    {"ins-vo-aid-bucket-h",     1, (void *)&prcopt_.insopt.voopt.bucket.h,    "" },
-    {"ins-vo-aid-bucket-nmax",  0, (void *)&prcopt_.insopt.voopt.bucket.nmax, "" },
+    {"ins-vo-aid-bucket-w",     1, (void *)&prcopt_.insopt.voopt.match.bucket.w,    "" },
+    {"ins-vo-aid-bucket-h",     1, (void *)&prcopt_.insopt.voopt.match.bucket.h,    "" },
+    {"ins-vo-aid-bucket-nmax",  0, (void *)&prcopt_.insopt.voopt.match.bucket.nmax, "" },
 
     {"",0,NULL,""}
 };

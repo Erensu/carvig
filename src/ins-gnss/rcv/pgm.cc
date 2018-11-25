@@ -3,7 +3,6 @@
  *
  * Various routines to manipulate PGM files.
  *----------------------------------------------------------------------------*/
-#include <vision.h>
 #include <carvig.h>
 
 /* global variable -----------------------------------------------------------*/
@@ -238,91 +237,6 @@ extern void ppmWriteFileRGB(char *fname, unsigned char *redimg,
 
     /* Close file */
     fclose(fp);
-}
-/*write float image to PGM ---------------------------------------------------
- * args:    pfloatimg_t *img  IO  float image data
- *          char *filename    O   write image data file path
- * return: none
- * ---------------------------------------------------------------------------*/
-extern void writeFloatImageToPGM(pfloatimg_t img,char *filename)
-{
-    int npixs =img->ncols*img->nrows;
-    float mmax=-999999.9f,mmin=999999.9f;
-    float fact;
-    float *ptr;
-    unsigned char *byteimg,*ptrout;
-    int i;
-
-    /* calculate minimum and maximum values of float image */
-    ptr=img->data;
-    for (i=0;i<npixs;i++)  {
-        mmax=MAX(mmax,*ptr);
-        mmin=MIN(mmin,*ptr);
-        ptr++;
-    }
-    /* allocate memory to hold converted image */
-    byteimg=(unsigned char *)malloc(npixs*sizeof(unsigned char));
-
-    /* Convert image from float to uchar */
-    fact=255.0f/(mmax-mmin);
-    ptr =img->data;
-    ptrout=byteimg;
-    for (i=0;i<npixs;i++) {
-        *ptrout++=(unsigned char)((*ptr++-mmin)*fact);
-    }
-    /* write uchar image to PGM */
-    pgmWriteFile(filename,byteimg,img->ncols,img->nrows);
-
-    /* free memory */
-    free(byteimg);
-}
-extern void writeFeatureListToPPM(pfeaturelist_t featurelist,
-                                  unsigned char *greyimg,int ncols,int nrows,
-                                  char *filename)
-{
-    int nbytes = ncols * nrows * sizeof(char);
-    unsigned char *redimg, *grnimg, *bluimg;
-    int offset;
-    int x, y, xx, yy;
-    int i;
-
-    /* Allocate memory for component images */
-    redimg = (unsigned char *)  malloc(nbytes);
-    grnimg = (unsigned char *)  malloc(nbytes);
-    bluimg = (unsigned char *)  malloc(nbytes);
-    if (redimg == NULL || grnimg == NULL || bluimg == NULL)
-        return;
-
-    /* Copy grey image to component images */
-    if (sizeof(unsigned char) != 1) {
-        trace(2,"(KLTWriteFeaturesToPPM)  KLT_PixelType is not uchar");
-    }
-    memcpy(redimg, greyimg, nbytes);
-    memcpy(grnimg, greyimg, nbytes);
-    memcpy(bluimg, greyimg, nbytes);
-
-    /* Overlay features in red */
-    for (i = 0 ; i < featurelist->n ; i++)
-        if (featurelist->feature[i]->valid >= 0)  {
-            x = (int) (featurelist->feature[i]->x + 0.5);
-            y = (int) (featurelist->feature[i]->y + 0.5);
-            for (yy = y - 1 ; yy <= y + 1 ; yy++)
-                for (xx = x - 1 ; xx <= x + 1 ; xx++)
-                    if (xx >= 0 && yy >= 0 && xx < ncols && yy < nrows)  {
-                        offset = yy * ncols + xx;
-                        *(redimg + offset) = 255;
-                        *(grnimg + offset) = 0;
-                        *(bluimg + offset) = 0;
-                    }
-        }
-
-    /* Write to PPM file */
-    ppmWriteFileRGB(filename, redimg, grnimg, bluimg, ncols, nrows);
-
-    /* Free memory */
-    free(redimg);
-    free(grnimg);
-    free(bluimg);
 }
 
 
