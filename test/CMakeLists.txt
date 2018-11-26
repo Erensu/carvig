@@ -36,6 +36,12 @@ target_link_libraries(test_m39_mix_data carvig)
 add_executable(test_vo_mono test_vo_mono.cc)
 target_link_libraries(test_vo_mono carvig)
 
+add_executable(test_svd test_svd.cc)
+target_link_libraries(test_svd carvig)
+
+add_executable(test_track test_track.cc)
+target_link_libraries(test_track carvig)
+
 
 
 

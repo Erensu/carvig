@@ -274,13 +274,15 @@ extern double** dmat(int m,int n)
 extern int svd(const double *A,int m,int n,double *U,double *W,double *V)
 {
 #ifdef LAPACK
-    int info=-1,lwork=-1,lda=m,ldu=n,ldvt=n,i,j;
+    register int info=-1,lwork=-1,lda=m,ldu=m,ldvt=n,i,j;
     double *s,*u,*vt,*a;
     double wkopt;
     double* work;
 
     s=mat(1,MAX(m,n)); u=mat(1,m*m); vt=mat(1,n*n);
     a=mat(m,n);
+
+    matcpy(a,A,m,n);
 
     dgesvd_("All","All",&m,&n,a,&lda,s,u,&ldu,vt,&ldvt,&wkopt,&lwork,&info);
     lwork=(int)wkopt;
@@ -290,18 +292,20 @@ extern int svd(const double *A,int m,int n,double *U,double *W,double *V)
         trace(3,"the algorithm computing SVD failed to converge.\n");
 
         free((void*)work);
-        free(a); free(u); free(vt); free(a);
+        free(a); free(u); free(vt); free(s);
         return 0;
     }
-    for (i=0;i<m;i++) for (j=0;j<n;j++) U[i+j*m]=u [i+j*ldu ];
-    for (i=0;i<n;i++) for (j=0;j<n;j++) V[i+j*n]=vt[i+j*ldvt];
+    for (i=0;i<m;i++) {
+        for (j=0;j<MIN(m,n);j++) U[i+j*m]=u[i+j*ldu];
+    }
+    for (i=0;i<n;i++) for (j=0;j<n;j++) V[i+j*n]=vt[j+i*ldvt];
     for (i=0;i<MIN(m,n);i++) W[i]=s[i];
 
-    free((void*)work);
-    free(a); free(u); free(vt); free(a);
-    return 0;
+    free(work);
+    free(a); free(u); free(vt); free(s);
+    return 1;
 #else
-    int i,j;
+    register int i,j;
     double **a,**v,**u,*w;
 
     w=mat(1,MAX(m,n));

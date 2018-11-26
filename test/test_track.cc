@@ -54,9 +54,10 @@ int main(int argc, char **argv)
     gtime_t t0={0};
     string dir="/home/sujinglan/libviso2/test/2010_03_09_drive_0019";
     img_t img_input={0};
-    double Tr[19];
 
     init_match(&match,&matchopt);
+
+    track_t track={0};
 
     for (int i=0;i<370;i++) {
         /* input file names */
@@ -80,26 +81,14 @@ int main(int argc, char **argv)
             }
         }
         img_input.w=width; img_input.h=height;
-        
+
         /* match feature points */
-        matchfeats(&match,&img_input);
+        if (matchfeats(&match,&img_input)) {
+            /* to track. */
+            match2track(&match.mp_bucket,match.pt,match.time,i+1,&match.Ip,&match.Ic,&voopt,&track);
 
-        //for (int j=0;j<match.mp_bucket.n;j++) {
-        //    match_point point;
-        //
-        //    point.up=match.mp_bucket.data[j].up; point.vp=match.mp_bucket.data[j].vp;
-        //    point.uc=match.mp_bucket.data[j].uc; point.vc=match.mp_bucket.data[j].vc;
-        //
-        //    kltstatus(&point,&match.Ip,&match.Ic,NULL);
-        //}
-
-        /* vo estimate */
-        estmonort(&voopt,&match.mp_bucket,Tr);
-
-        trace(3,"transform matrix:\n");
-        tracemat(3,Tr,4,4,12,6);
-
+            tracetrack(&track);
+        }
         freeimg(&img_input);
     }
-    return 0;
 }

@@ -105,7 +105,8 @@ static void trace_match_points(const match_set_t *match)
 {
     int i;
     for (i=0;i<match->n;i++) {
-        trace(3,"id=%3d  (up,vp)=(%8.3lf,%8.3lf),(uc,vc)=(%8.3lf,%8.3lf)\n",
+        trace(3,"ip=%3d  ic=%3d  (up,vp)=(%8.3lf,%8.3lf),(uc,vc)=(%8.3lf,%8.3lf)\n",
+              match->data[i].ip,match->data[i].ic,
               match->data[i].up,
               match->data[i].vp,
               match->data[i].uc,match->data[i].vc);
@@ -1388,8 +1389,9 @@ extern int matchfeats(match_t *pmatch,const img_t *img)
     dims[0]=img->w; dims[1]=img->h;
     dims[2]=img->w;
 
+    pmatch->pt  =pmatch->time;
     pmatch->time=img->time; /* update time */
-
+    
     /* backup image buffer data */
     backupimg(img,pmatch);
 

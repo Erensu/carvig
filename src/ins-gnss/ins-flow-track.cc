@@ -2320,8 +2320,8 @@ static void klt(tracking_context_t* tc,unsigned char *img1,unsigned char *img2,
 
         }
         else if (outOfBounds(xlocout,ylocout,ncols,nrows,tc->trackopt.kltopt.borderx,tc->trackopt.kltopt.bordery)) {
-            featurelist->feature[indx]->x    =-1.0f;
-            featurelist->feature[indx]->y    =-1.0f;
+            featurelist->feature[indx]->x=-1.0f;
+            featurelist->feature[indx]->y=-1.0f;
             featurelist->feature[indx]->status=KLT_OOB;
             if (featurelist->feature[indx]->aff_img) free_floatimg(featurelist->feature[indx]->aff_img);
             if (featurelist->feature[indx]->aff_img_gradx) {

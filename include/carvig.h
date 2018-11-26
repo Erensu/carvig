@@ -738,11 +738,20 @@ typedef struct feature {        /* feature data type */
     int valid,status;           /* valid flag of feature/feature track status*/
 } feat_data_t;
 
+typedef struct img {            /* image data type */
+    gtime_t time;               /* data time */
+    int w,h;                    /* width and height of image */
+    unsigned char *data;        /* image data buffer */
+} img_t;
+
 typedef struct trackd {         /* feature points track record */
     gtime_t ts,te;              /* start/end timestamp */
     int n,nmax;                 /* number and max number of feature points */
-    int uid;                    /* a unique identifier of this track */
+    int last_idx,first_frame,last_frame;
+                                /* last index/first frame index/last frame index of this track */
+    long int uid;               /* a unique identifier of this track */
     struct feature *data;       /* track feature data */
+    struct img     *I;          /* store tracking image data for debugs */
 } trackd_t;
 
 typedef struct track {          /* store all feature track data type */
@@ -762,12 +771,6 @@ typedef struct {                /* camera parameters (all are mandatory/need to 
     double cv;                  /* principal point (v-coordinate) */
     double k1,k2,k3,k4;         /* camera radial tangential distortion coefficients */
 } calib_t;
-
-typedef struct {                /* image data type */
-    gtime_t time;               /* data time */
-    int w,h;                    /* width and height of image */
-    unsigned char *data;        /* image data buffer */
-} img_t;
 
 typedef struct {                /* visual odometry matching options */
     int img_w,img_h;            /* image width and height in pixel */
@@ -798,7 +801,7 @@ typedef struct match_set {      /* store all matched feature points */
 } match_set_t;
 
 typedef struct {                /* match struct type */
-    gtime_t time;               /* match time */
+    gtime_t time,pt;            /* current/precious match time */
     img_t Ip,Ic;                /* precious/current image data */
     match_set_t mp_dense;       /* dense macthed feature points data */
     match_set_t mp_sparse;      /* sparse macthed feature points data */
@@ -3169,6 +3172,17 @@ EXPORT void initklt();
 EXPORT void freeklt();
 EXPORT int kltstatus(match_point_t *matchp,const img_t *pimg,const img_t *cimg,
                      const voopt_t *opt);
+
+/* tracking functions--------------------------------------------------------*/
+EXPORT void tracetrack(const track_t *track);
+EXPORT void feat2ppm(feature *featurelist, int nfeature,unsigned char *greyimg,
+                     int ncols,int nrows,char *filename);
+EXPORT void freetrackset(track_t *track);
+EXPORT void freetrack(trackd_t *track);
+EXPORT int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_frame,
+                       const img_t *pimg,const img_t *cimg,
+                       const voopt_t *opt,track_t *track);
+EXPORT int inittrack(trackd_t *data,const voopt_t *opt);
 
 #ifdef __cplusplus
 }
