@@ -14,6 +14,7 @@
 * history : 2017/10/02 1.0 new
 *-----------------------------------------------------------------------------*/
 #include <carvig.h>
+#include <include/carvig.h>
 
 /* constants/macros ----------------------------------------------------------*/
 #define MAXDT       3600.0                 /* max time difference for ins-gnss coupled */
@@ -124,6 +125,7 @@ static void getQ(const insopt_t *opt,double dt,double* Q)
     sysQ(isa,nsa,nx,opt->psd.sa,dt,Q);
     sysQ(irg,nrg,nx,opt->psd.rg,dt,Q);
     sysQ(ira,nra,nx,opt->psd.ra,dt,Q);
+    sysQ(ila,nla,nx,opt->psd.lever,dt,Q);
     sysQ(iso,nos,nx,opt->psd.os,dt,Q);
     sysQ(iol,nol,nx,opt->psd.ol,dt,Q);
     sysQ(ioa,noa,nx,opt->psd.oa,dt,Q);

@@ -1008,12 +1008,13 @@ typedef struct {            /* PSD for ins-gnss loosely coupled ekf states */
     double sa;              /* residual scale factors of accl noise PSD */
     double ra;              /* non-orthogonal between sensor axes for accl noise PSD */
     double rg;              /* non-orthogonal between sensor axes for gyro noise PSD */
+    double lever,mla;       /* lever arm for body to ant. noise PSD */
     double os;              /* odometry scale factor noise PSD */
     double ol;              /* odometry lever arm noise PSD */
     double oa;              /* odometry misalignment noise PSD */
     double clk;             /* receiver clock phase-drift PSD (m^2/s) */
     double clkr;            /* receiver clock drift PSD */
-    double cma;             /* misalignment from camera to imu body noise PSD */
+    double cma;             /* misalignment from camera to b-frame noise PSD */
     double vma;             /* misalignment from v-frame to b-frame noise PSD */
 } psd_t;
 
@@ -1028,7 +1029,7 @@ typedef struct {            /* initial uncertainty for ins-gnss loosely coupled 
     double sa;              /* initial residual scale factors of accl uncertainty */
     double ra;              /* initial non-orthogonal between sensor axes for accl uncertainty */
     double rg;              /* initial non-orthogonal between sensor axes for gyro uncertainty */
-    double lever;           /* initial lever arm for body to ant. uncertainty (m) */
+    double lever,mla;       /* initial lever arm for body to ant. uncertainty {m/rad} */
     double os;              /* initial odometry scale factor uncertainty */
     double ol;              /* initial odometry lever arm uncertainty */
     double oa;              /* initial odometry misalignment uncertainty */
@@ -2303,10 +2304,7 @@ extern const quat_t identity_quat;        /* identity quaternion */
 extern const double Cen[9];               /* transform matrix of enu-frame convert to ned-frame */
 extern const double Crf[9];               /* transform matrix of rfu-frame convert to frd-frame */
 extern const char *solqstrs[];            /* solution status strings */
-static const char icvPower2ShiftTab[]={
-     0, 1,-1, 2,-1,-1,-1, 3,-1,-1,-1,-1,-1,-1,-1,4,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,5
-};
+
 /* satellites, systems, codes functions --------------------------------------*/
 EXPORT int  satno   (int sys, int prn);
 EXPORT int  satsys  (int sat, int *prn);
@@ -3199,6 +3197,7 @@ EXPORT int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
                        const voopt_t *opt,track_t *track);
 EXPORT int inittrack(trackd_t *data,const voopt_t *opt);
 EXPORT void drawtrack(const track_t *track,const voopt_t *opt);
+EXPORT trackd_t *gettrack(const track_t *track,int uid);
 
 /* pnp pose estimate function------------------------------------------------*/
 EXPORT int p3pthree(const feature *feats,int nf,double *xp,int np,

@@ -186,9 +186,9 @@ extern void pgmWriteFile(char *fname, unsigned char *img, int ncols, int nrows)
     FILE *fp;
 
     /* Open file */
-    if ((fp=fopen(fname,"wb")) == NULL)
+    if ((fp=fopen(fname,"wb"))==NULL) {
         trace(2,"(pgmWriteFile) Can't open file named '%s' for writing\n",fname);
-
+    }
     /* Write to file */
     pgmWrite(fp,img,ncols,nrows);
 
@@ -202,7 +202,7 @@ extern void ppmWrite(FILE *fp,unsigned char *redimg,unsigned char *greenimg,
                      unsigned char *blueimg,
                      int ncols, int nrows)
 {
-    int i, j;
+    int i,j;
 
     /* Write header */
     fprintf(fp,"P6\n");
@@ -210,11 +210,11 @@ extern void ppmWrite(FILE *fp,unsigned char *redimg,unsigned char *greenimg,
     fprintf(fp,"255\n");
 
     /* Write binary data */
-    for (j=0;j<nrows;j++)  {
-        for (i=0;i<ncols;i++)  {
+    for (j=0;j<nrows;j++) {
+        for (i=0;i<ncols;i++) {
             fwrite(redimg,1,1,fp);
             fwrite(greenimg,1,1,fp);
-            fwrite(blueimg, 1,1,fp);
+            fwrite(blueimg,1,1,fp);
             redimg++; greenimg++; blueimg++;
         }
     }
@@ -229,9 +229,9 @@ extern void ppmWriteFileRGB(char *fname, unsigned char *redimg,
     FILE *fp;
 
     /* Open file */
-    if ((fp=fopen(fname,"wb"))==NULL)
+    if ((fp=fopen(fname,"wb"))==NULL) {
         trace(2,"(ppmWriteFileRGB) Can't open file named '%s' for writing\n",fname);
-
+    }
     /* Write to file */
     ppmWrite(fp,redimg,greenimg,blueimg,ncols,nrows);
 
