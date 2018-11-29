@@ -290,6 +290,8 @@ static int match_internal(const matchopt_t *opt,match_set_t *mset,int32_t *mp,
             p.up=up; p.vp=vp; p.ip=ip;
             p.uc=uc; p.vc=vc; p.ic=i;
             add_match_set_match_point(mset,&p);
+
+            *(M+get_address_offset_image(uc,vc,dims_c[0]))=1;
         }
     }
     for (i=0;i<b;i++) {

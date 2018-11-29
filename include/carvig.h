@@ -22,6 +22,7 @@
 #include <queue.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <malloc.h>
 
 /* define fixed-width datatypes for Visual Studio projects */
 #if defined(_MSC_VER)&&(_MSC_VER<1600)
@@ -35,6 +36,10 @@ typedef unsigned __int32  uint32_t;
 typedef unsigned __int64  uint64_t;
 #else
 #include <stdint.h>
+#endif
+
+#ifndef uchar
+typedef unsigned char uchar;
 #endif
 
 #ifdef WIN32
@@ -307,7 +312,7 @@ extern "C"{
 #define FREQTYPE_L9 0x40                /* frequency type: S */
 #define FREQTYPE_ALL 0xFF               /* frequency type: all */
 
-#define FEAT_CREATE   0                 /* feature point status: created */
+#define FEAT_CREATE           0         /* feature point status: created */
 
 #define KLT_INIT              1         /* KLT track status: initial */
 #define KLT_TRACKED           0         /* KLT track status: tracked */
@@ -316,6 +321,8 @@ extern "C"{
 #define KLT_MAX_ITERATIONS   -3         /* KLT track status: max iterations */
 #define KLT_OOB              -4         /* KLT track status: out of border */
 #define KLT_LARGE_RESIDUE    -5         /* KLT track status: large residue */
+
+#define TRACE_TRACK           1         /* trace track data for debugs */
 
 #define CODE_NONE   0                   /* obs code: none or unknown */
 #define CODE_L1C    1                   /* obs code: L1C/A,G1C/A,E1C (GPS,GLO,GAL,QZS,SBS) */
@@ -657,7 +664,7 @@ extern "C"{
 
 #define VO_MONO            1            /* mono camera visual odometry mode */
 #define VO_STEREO          2            /* stereo camera visual odometry mode */
-#define FEATURE_MAX_D      128          /* max length of feature descriptor */
+#define DESCR_MAXLEN       128          /* max length of feature descriptor */
 
 #define POSE_CAM           1            /* fusion external pose measurement from camera visual odometry */
 #define POSE_DUAL_ANT      2            /* fusion external pose measurement from dual antennas */
@@ -736,6 +743,8 @@ typedef struct feature {        /* feature data type */
     double u,v;                 /* pixel u,v coord */
     long int id;                /* id of feature point */
     int valid,status;           /* valid flag of feature/feature track status*/
+    int descrlen;               /* length of descriptor */
+    double descr[DESCR_MAXLEN]; /* descriptor */
 } feat_data_t;
 
 typedef struct img {            /* image data type */
@@ -765,11 +774,10 @@ typedef struct {                /* bucketing parameters */
     double h;                   /* height of bucket */
 } bucketopt_t;
 
-typedef struct {                /* camera parameters (all are mandatory/need to be supplied) */
+typedef struct {                /* camera parameters (all are mandatory/need to be supplied) for matching feature points */
     double f,fu,fv;             /* focal length (in pixels) */
     double cu;                  /* principal point (u-coordinate) */
     double cv;                  /* principal point (v-coordinate) */
-    double k1,k2,k3,k4;         /* camera radial tangential distortion coefficients */
 } calib_t;
 
 typedef struct {                /* visual odometry matching options */
@@ -1084,7 +1092,8 @@ typedef struct {            /* odometry options types */
 
 typedef struct {            /* visual odometry aid ins options (here for rectified image) */
     matchopt_t match;       /* feature match options */
-    calib_t calib;          /* camera parameters */
+    calib_t calib;          /* camera parameters for matching feature points */
+    cam_t   cam;            /* camera intrinsic parameters */
     double height;          /* camera height above ground (meters) */
     double inlier_thres;    /* fundamental matrix inlier threshold */
     double motion_thres;    /* directly return false on small motions */
@@ -3167,6 +3176,12 @@ EXPORT unsigned char* pgmReadFile(char *fname,unsigned char *img,
 EXPORT unsigned char* pgmRead(FILE *fp,unsigned char *img,
                               int *ncols, int *nrows);
 
+/* jpeg file read/write------------------------------------------------------*/
+EXPORT void savejpg(const char* filename, uchar* body, int h, int w, int ch,
+                    int quality);
+EXPORT int loadjpg(const char* filename, uchar* &body, int &h, int &w,
+                   int &ch);
+
 /* klt track-----------------------------------------------------------------*/
 EXPORT void initklt();
 EXPORT void freeklt();
@@ -3183,6 +3198,17 @@ EXPORT int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
                        const img_t *pimg,const img_t *cimg,
                        const voopt_t *opt,track_t *track);
 EXPORT int inittrack(trackd_t *data,const voopt_t *opt);
+EXPORT void drawtrack(const track_t *track,const voopt_t *opt);
+
+/* pnp pose estimate function------------------------------------------------*/
+EXPORT int p3pthree(const feature *feats,int nf,double *xp,int np,
+                    const voopt_t *opt,double *R,double *t);
+EXPORT int p3p(const feature *feats,int nf,const double *xp,int np,
+               const voopt_t *opt,double *R,double *t);
+
+/* visual odometry utils-----------------------------------------------------*/
+EXPORT int iscolinear(const double *p1,const double *p2,const double *p3,
+                      int dim, int flag);
 
 #ifdef __cplusplus
 }

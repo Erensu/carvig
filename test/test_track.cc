@@ -32,7 +32,7 @@ int main(int argc, char **argv)
 
     matchopt.img_w=1344; matchopt.img_h=372;
 
-    bucketopt.nmax=5;
+    bucketopt.nmax=10;
     bucketopt.w=50;
     bucketopt.h=50;
 
@@ -87,7 +87,11 @@ int main(int argc, char **argv)
             /* to track. */
             match2track(&match.mp_bucket,match.pt,match.time,i+1,&match.Ip,&match.Ic,&voopt,&track);
 
+#if 0
             tracetrack(&track);
+#else
+            drawtrack(&track,&voopt);
+#endif
         }
         freeimg(&img_input);
     }

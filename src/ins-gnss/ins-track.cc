@@ -20,8 +20,8 @@
 #include <carvig.h>
 
 /* constants------------------------------------------------------------------*/
-#define REFINE          1             /* tracking refine feature points */
-#define OUTPUT_PPM      1             /* output tracking data to ppm file */
+#define REFINE          1         /* tracking refine feature points */
+#define OUTPUT_PPM      1         /* output tracking data to ppm file */
 
 /* global variables-----------------------------------------------------------*/
 static long int id_seed=1;        /* generate a new feature id */
@@ -75,6 +75,7 @@ static int addnewfeatimg(trackd_t *track,const feature *feat,const img_t *img)
             return -1;
         }
         track->data=obs_data;
+#if TRACE_TRACK
         if (!(img_data=(img_t*)realloc(track->I,sizeof(img_t)*track->nmax))) {
             for (i=0;i<track->n;i++) free(track->I[i].data); track->I[i].data=NULL;
 
@@ -82,9 +83,12 @@ static int addnewfeatimg(trackd_t *track,const feature *feat,const img_t *img)
             track->n=track->nmax=0;
             return -1;
         }
-        track->I=img_data;  
+        track->I=img_data;
+#endif
     }
+#if TRACE_TRACK
     copyimg(&track->I[track->n],img);
+#endif
     track->data[track->n++]=*feat;
     return 1;
 }
@@ -285,7 +289,7 @@ extern void tracetrack(const track_t *track)
                   pta->first_frame+j,pta->data[j].u,pta->data[j].v);
         }
         /* output to PPM file */
-#if OUTPUT_PPM
+#if OUTPUT_PPM&TRACE_TRACK
         sprintf(dir,"/media/sujinglan/Files/carvig-debug/test_track/track_%ld",pta->uid);
 
         /* create new dir. */
@@ -301,5 +305,20 @@ extern void tracetrack(const track_t *track)
 #endif
     }
 }
+/* get track given track-uid--------------------------------------------------
+ * args:    track_t *track  I  tracking data
+ *          int uid         I  track uid need to find
+ * return: pointer of track (NULL: no found)
+ * ---------------------------------------------------------------------------*/
+extern trackd_t *gettrack(const track_t *track,int uid)
+{
+    trace(3,"gettrack:\n");
+    int i;
+    for (i=0;i<track->n;i++) {
+        if (track->data[i].uid==uid) return &track->data[i];
+    }
+    return NULL;
+}
+
 
 

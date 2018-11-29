@@ -32,8 +32,8 @@ static void pnmReadHeader(FILE *fp,int *magic,int *ncols, int *nrows,int *maxval
     char line[LENGTH];
 
     /* Read magic number */
-    _getNextString(fp, line);
-    if (line[0] != 'P')
+    _getNextString(fp,line);
+    if (line[0]!='P')
         trace(2,"Magic number does not begin with 'P', "
                 "but with a '%c'",line[0]);
     sscanf(line,"P%d",magic);
@@ -150,7 +150,7 @@ extern unsigned char* pgmReadFile(char *fname,unsigned char *img,
     FILE *fp;
 
     /* Open file */
-    if ((fp=fopen(fname,"rb")) == NULL)
+    if ((fp=fopen(fname,"rb"))==NULL)
         trace(2,"Can't open file named '%s' for reading\n",fname);
 
     /* Read file */

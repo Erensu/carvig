@@ -239,10 +239,7 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
             trace(3,"tightly couple ok\n");
 
             /* lack satellites but tightly-coupled run */
-            if (ins->ns<4) {
-                ins->stat=INSS_LACK;
-            }
-            /* save precious epoch gps measurement */
+            if (ins->ns<4) ins->stat=INSS_LACK;
             savegmeas(ins,&rtk->sol,NULL);
 #if 1
             /* recheck attitude */

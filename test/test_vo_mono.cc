@@ -94,10 +94,10 @@ int main(int argc, char **argv)
         //}
 
         /* vo estimate */
-        estmonort(&voopt,&match.mp_bucket,Tr);
+        //estmonort(&voopt,&match.mp_bucket,Tr);
 
-        trace(3,"transform matrix:\n");
-        tracemat(3,Tr,4,4,12,6);
+        //trace(3,"transform matrix:\n");
+        //tracemat(3,Tr,4,4,12,6);
 
         freeimg(&img_input);
     }

@@ -40,7 +40,10 @@ add_executable(test_svd test_svd.cc)
 target_link_libraries(test_svd carvig)
 
 add_executable(test_track test_track.cc)
-target_link_libraries(test_track carvig)
+target_link_libraries(test_track carvig ${OpenCV_LIBS})
+
+add_executable(test_p3p test_p3p.cc)
+target_link_libraries(test_p3p carvig ${OpenCV_LIBS})
 
 
 

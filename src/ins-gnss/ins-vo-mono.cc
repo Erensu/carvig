@@ -309,7 +309,7 @@ static int getinlier(const frame_t *frame,const voopt_t *opt,const double *F,
         matmul33("TNN",x2,F,x1,1,3,3,1,&x2tFx1);
 
         /* sampson distance */
-        d=SQR(x2tFx1)/(SQR(Fx [0])+SQR(Fx [1])+SQR(Ftx[0])+SQR(Ftx[1]));
+        d=SQR(x2tFx1)/(SQR(Fx[0])+SQR(Fx[1])+SQR(Ftx[0])+SQR(Ftx[1]));
 
         /* check threshold */
         if (fabs(d)<opt->inlier_thres) {
@@ -573,4 +573,5 @@ extern int estmonort(const voopt_t *opt,const match_set_t *mf,double *Tr)
     freeframe(&frame);
     return flag;
 }
+
 

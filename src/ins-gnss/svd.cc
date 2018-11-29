@@ -295,11 +295,11 @@ extern int svd(const double *A,int m,int n,double *U,double *W,double *V)
         free(a); free(u); free(vt); free(s);
         return 0;
     }
-    for (i=0;i<m;i++) {
+    for (i=0;i<m&&U;i++) {
         for (j=0;j<MIN(m,n);j++) U[i+j*m]=u[i+j*ldu];
     }
-    for (i=0;i<n;i++) for (j=0;j<n;j++) V[i+j*n]=vt[j+i*ldvt];
-    for (i=0;i<MIN(m,n);i++) W[i]=s[i];
+    for (i=0;i<n&&V;i++) for (j=0;j<n;j++) V[i+j*n]=vt[j+i*ldvt];
+    for (i=0;i<MIN(m,n)&&W;i++) W[i]=s[i];
 
     free(work);
     free(a); free(u); free(vt); free(s);
