@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* rtcm.c : rtcm functions
+* rtcm.cc : rtcm functions
 *
 * references :
 *     [1] RTCM Recommended Standards for Differential GNSS (Global Navigation

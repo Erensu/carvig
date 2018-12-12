@@ -36,9 +36,10 @@ static void savepins(insstate_t *ins,const imud_t *data)
  *                        O    uipdates body-to-ecef coordinate transformation matrix
  *           double *omgb I    angular rate of body frame (rad/s) w.r.t eci-frame
  *                             expressed in ecef-frame
+ *           double *das  I    rotational and sculling motion correction
  * return  :none
  * ---------------------------------------------------------------------------*/
-static void updateatt(double dt, double *Cbe, const double *omgb)
+static void updateatt(double dt, double *Cbe, const double *omgb,const double *das)
 {
     double alpha[3],a,a1,a2,Ca[9],Ca2[9],Cbep[9];
     double Cbb[9]={1,0,0,0,1,0,0,0,1},Cei[9]={0};
@@ -46,7 +47,7 @@ static void updateatt(double dt, double *Cbe, const double *omgb)
 
     trace(3,"updateatt: dt=%.4lf\n",dt);
 
-    for (i=0;i<3;i++) alpha[i]=omgb[i]*dt;
+    for (i=0;i<3;i++) alpha[i]=omgb[i]*dt+das[i];
     skewsym3(alpha,Ca);
     matmul3("NN",Ca,Ca,Ca2);
     a=norm(alpha,3);
@@ -68,13 +69,14 @@ static void updateatt(double dt, double *Cbe, const double *omgb)
 * update ins states with imu measurement data in e-frame in backward
 * args   : insopt   *insopt I   ins updates options
 *          insstate_t *ins  IO  ins states
-*          imudata_t *data  I   imu measurement data
+*          imud_t    *data  I   imu measurement data
 * return : 0 (fail) or 1 (ok)
 *----------------------------------------------------------------------------*/
 extern int updateinsbe(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
 {
     double dt,Cbe[9],fe[3],ge[3],cori[3],Cbb[9]={1,0,0,0,1,0,0,0,1};
     double Ca[9],Ca2[9],a1,a2,a,alpha[3]={0},Omg[9]={0},ae[3]={0};
+    double das[3]={0},dvs[3]={0},fb[3];
     int i;
 
     trace(3,"updateinsb:\n");
@@ -85,6 +87,12 @@ extern int updateinsbe(const insopt_t *insopt,insstate_t *ins,const imud_t *data
     savepins(ins,data);
 
     if ((dt=-timediff(data->time,ins->time))>MAXDT||fabs(dt)<1E-6) {
+
+        /* update time information */
+        ins->dt=timediff(data->time,ins->time);
+        ins->ptime=ins->time;
+        ins->time =data->time;
+
         trace(2,"time difference too large: %.0fs\n",dt);
         return 0;
     }
@@ -96,17 +104,21 @@ extern int updateinsbe(const insopt_t *insopt,insstate_t *ins,const imud_t *data
         }
         else {
             ins->omgb[i]=data->gyro[i]-ins->bg[i];
-            ins->fb[i]  =data->accl[i]-ins->ba[i];
+            ins->fb  [i]=data->accl[i]-ins->ba[i];
         }
     }
     matcpy(Cbe,ins->Cbe,3,3);
     ae[2]=OMGE*dt;
 
+#if SCULL_CORR
+    /* rotational and sculling motion correction */
+    rotscull_corr(ins,insopt,dt,dvs,das);
+#endif
     /* update attitude */
-    updateatt(dt,ins->Cbe,ins->omgb);
+    updateatt(dt,ins->Cbe,ins->omgb,das);
 
 #if INSUPDPRE
-    for (i=0;i<3;i++) alpha[i]=ins->omgb[i]*dt;
+    for (i=0;i<3;i++) alpha[i]=ins->omgb[i]*dt+das[i];
     skewsym3(alpha,Ca);
     /* check if the value is too small to keep numerical robustness */
     if ((a=norm(alpha,3))>1E-8) {
@@ -127,7 +139,8 @@ extern int updateinsbe(const insopt_t *insopt,insstate_t *ins,const imud_t *data
     for (i=0;i<9;i++) Cbe[i]=(Cbe[i]+ins->Cbe[i])/2.0;
 #endif
     /* specific-force/gravity in e-frame */
-    matmul3v("N",Cbe,ins->fb,fe);
+    for (i=0;i<3;i++) fb[i]=ins->fb[i]+dvs[i]/dt;
+    matmul3v("N",Cbe,fb,fe);
     if (insopt->gravityex) {
         pregrav(ins->re,ge); /* precious gravity model */
     }
@@ -136,7 +149,7 @@ extern int updateinsbe(const insopt_t *insopt,insstate_t *ins,const imud_t *data
     /* update velocity/position */
     matmul3v("N",Omge,ins->ve,cori);
     for (i=0;i<3;i++) {
-        ins->ae[i]=fe[i]+ge[i]-2.0*cori[i];
+        ins->ae[i]=fe[i]+ge[i]-2.0*cori[i]+dvs[i]/dt;
         ins->ve[i]-=ins->ae[i]*dt;
         ins->re[i]-=ins->ve[i]*dt+ins->ae[i]/2.0*dt*dt;
     }
@@ -381,6 +394,7 @@ extern int updateinsbn(const insopt_t *insopt,insstate_t *ins,const imud_t *data
     double dv1[3],dv2[3],qbn[4],w[3],rn[3];
     double qb[4],qn[4],q[4],vmid[3];
     double Cen[9],Cne[9],Cn[9],h;
+    double das[3]={0},dvs[3]={0},fb[3];
     int i;
 
     trace(3,"updateinsbn:\n");
@@ -393,6 +407,12 @@ extern int updateinsbn(const insopt_t *insopt,insstate_t *ins,const imud_t *data
     savepins(ins,data);
 
     if ((dt=-timediff(data->time,ins->time))>MAXDT||fabs(dt)<1E-6) {
+
+        /* update information */
+        ins->dt=timediff(data->time,ins->time);
+        ins->ptime=ins->time;
+        ins->time =data->time;
+
         trace(2,"time difference too large: %.0fs\n",dt);
         return 0;
     }
@@ -412,8 +432,12 @@ extern int updateinsbn(const insopt_t *insopt,insstate_t *ins,const imud_t *data
     getvn(ins,vn);
 
     geoparam(rn,vn,wen_n,wie_n,&g);
+#if SCULL_CORR
+    /* rotational and sculling motion correction */
+    rotscull_corr(ins,insopt,dt,dvs,das);
+#endif
     for (i=0;i<3;i++) {
-        dv[i]=ins->fb[i]*dt; da[i]=-ins->omgb[i]*dt;
+        dv[i]=ins->fb[i]*dt+dvs[i]; da[i]=-ins->omgb[i]*dt+das[i];
     }
     /* update velocity */
     getqbn(ins,qbn);

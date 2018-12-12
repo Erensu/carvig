@@ -573,5 +573,41 @@ extern int estmonort(const voopt_t *opt,const match_set_t *mf,double *Tr)
     freeframe(&frame);
     return flag;
 }
+/* ---------------------------------------------------------------------------
+ * triangulate Triangulates 3D points from two sets of feature vectors and a
+ * a frame-to-frame transformation
+ * args:    double *C21    I  rotation matrix from 2-frame to 1-frame
+ *          double *t12_1  I  translation from 1-frame to 2-frame expressed
+ *                            in 1-frame
+ *          double *obs1   I  (u,v) observation in 1-frame
+ *          double *obs2   I  (u,v) observation in 2-frame
+ *          double *K      I  camera calibration matrix
+ *          double *X      O  output feature 3D-point
+ * return: status (1: ok,0: fail)
+ * ---------------------------------------------------------------------------*/
+extern int triangulate3D(const double *C21,const double *t12_1,
+                         const double *obs1, const double *obs2,
+                         const double *K,double *X)
+{
+    int flag=0,i; double Xp[4];
+    frame_t frame={0};
+    fea_t feat;
+
+    trace(3,"triangulate3D:\n");
+
+    /* feature point measurement data */
+    feat.u1p=obs1[0]; feat.v1p=obs1[1];
+    feat.u1c=obs2[0];
+    feat.v1c=obs2[1];
+
+    addfeature(&frame,&feat);
+    flag=triangulate(&frame,K,C21,t12_1,Xp);
+
+    /* normalize 3D points */
+    for (i=0;i<4;i++) X[i]=Xp[i]/Xp[3];
+
+    freeframe(&frame);
+    return flag&&X[2]>0.0;
+}
 
 

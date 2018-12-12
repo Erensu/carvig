@@ -2379,10 +2379,13 @@ static void klt(tracking_context_t* tc,unsigned char *img1,unsigned char *img2,
             featurelist->feature[indx]->status=KLT_TRACKED;
             featurelist->feature[indx]->count++;
 
-            if (tc->trackopt.kltopt.affineConsistencyCheck>=0&&val==KLT_TRACKED) { /*for affine mapping*/
-                int border=2; /* add border for interpolation */
+            /*for affine mapping*/
+            if (tc->trackopt.kltopt.affineConsistencyCheck>=0&&val==KLT_TRACKED) {
+                /* add border for interpolation */
+                int border=2;
 
-                if(!featurelist->feature[indx]->aff_img){
+                if (!featurelist->feature[indx]->aff_img){
+
                     /* save image and gradient for each feature at finest resolution after first successful track */
                     featurelist->feature[indx]->aff_img=create_floatimg((tc->trackopt.kltopt.affine_window_width+border),(tc->trackopt.kltopt.affine_window_height+border));
                     featurelist->feature[indx]->aff_img_gradx=create_floatimg((tc->trackopt.kltopt.affine_window_width+border),(tc->trackopt.kltopt.affine_window_height+border));

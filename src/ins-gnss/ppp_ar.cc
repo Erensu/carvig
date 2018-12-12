@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* ppp_ar.c : ppp ambiguity resolution
+* ppp_ar.cc : ppp ambiguity resolution
 *
 * options : -DREV_WL_FCB reversed polarity of WL FCB
 *

@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* ppp_corr.c : ppp corrections functions
+* ppp_corr.cc : ppp corrections functions
 *
 * version : $Revision:$ $Date:$
 * history : 2015/05/20 1.0 new

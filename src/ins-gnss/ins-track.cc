@@ -37,7 +37,7 @@ extern int inittrack(trackd_t *data,const voopt_t *opt)
     trace(3,"inittrack:\n");
 
     data->ts=data->te=t0;
-    data->n=data->nmax=0; data->uid=id_seed++;
+    data->n=data->nmax=0; data->uid=id_seed++; sprintf(data->name,"%ld",data->uid);
     data->data=NULL;
     data->I   =NULL;
     return 1;
@@ -49,7 +49,7 @@ static int findtrack(const track_t *track,const match_point *mp)
     for (i=0;i<track->n;i++) {
         if (mp->ip==track->data[i].last_idx) return i;
     }
-    return -1;
+    return track->n;
 }
 /* copy image data------------------------------------------------------------*/
 static int copyimg(img_t *out,const img_t *in)
@@ -100,6 +100,7 @@ static int addnewtrack(track_t *track,const trackd_t *data)
     if (track->nmax<=track->n) {
         if (track->nmax<=0) track->nmax=16*2; else track->nmax*=2;
         if (!(obs_data=(trackd_t *)realloc(track->data,sizeof(trackd_t)*track->nmax))) {
+
             free(track->data);
             track->data=NULL;
             track->n=track->nmax=0; return -1;
@@ -135,8 +136,14 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
     /* timestamp */
     ntrack.ts=tp; ntrack.te=tc;
 
+    ntrack.flag=1;
+
     /* add new track */
-    return addnewtrack(track,&ntrack);
+    if (addnewtrack(track,&ntrack)<=0) {
+        trace(2,"add new track fail\n");
+        return 0;
+    }
+    return track->n-1;
 }
 /* matched feature points set data convert to track set-----------------------
  * args:  match_set *set   I  matched feature points set data
@@ -151,10 +158,15 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
                        const img_t *pimg,const img_t *cimg,
                        const voopt_t *opt,track_t *track)
 {
+    register int i,idx=0;
     feature feat;
-    int i,idx;
+
+    track->nnew=0; track->nupd=0;
 
     trace(3,"match2track:\n");
+
+    /* initial flag of all track */
+    for (i=0;i<track->n;i++) track->data[i].flag=2;
 
     /* initial track */
     if (track->n==0) {
@@ -162,14 +174,22 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
 
             /* create a new track */
             newtrack(&mset->data[i],tp,tc,curr_frame,opt,track,pimg,cimg);
+
+            /* update index */
+            track->newtrack[track->nnew]=i;
+            track->nnew++;
         }
         return 1;
     }
     for (i=0;i<mset->n;i++) {
-        if ((idx=findtrack(track,&mset->data[i]))<0) {
+        if (findtrack(track,&mset->data[i])<0) {
 
             /* create a new track */
-            if (newtrack(&mset->data[i],tp,tc,curr_frame,opt,track,pimg,cimg)<0) return 0;
+            if ((idx=newtrack(&mset->data[i],tp,tc,curr_frame,opt,track,pimg,cimg)<0)) return 0;
+
+            /* update index */
+            track->newtrack[track->nnew]=idx;
+            track->nnew++;
             continue;
         }
 #if REFINE
@@ -190,6 +210,12 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
 
         /* timestamp */
         track->data[idx].te=tc;
+
+        /* update index */
+        track->updtrack[track->nupd]=idx;
+        track->nupd++;
+
+        track->data[idx].flag=0;
     }
     return track->n>0;
 }
@@ -318,6 +344,27 @@ extern trackd_t *gettrack(const track_t *track,int uid)
         if (track->data[i].uid==uid) return &track->data[i];
     }
     return NULL;
+}
+/* check feature point whether is out of view or track lost-------------------
+ * args:    track_t *track  I  tracking data
+ *          voopt_t *opt    I  visual odomtery options
+ *          int id          I  feature point id
+ *          gtime_t time    I  tracking timestamp
+ * return:  status (1: out of view,0: in view,-1: no found)
+ * ---------------------------------------------------------------------------*/
+extern int outofview(const track_t *track,const voopt_t *opt,int id,gtime_t time)
+{
+    trackd_t *pt=NULL;
+    int i;
+
+    for (i=0;i<track->n;i++) {
+        if (track->data[i].uid==id) {pt=&track->data[i]; break;}
+    }
+    if (!pt) return -1;
+    for (i=0;i<pt->n;i++) {
+        if (fabs(timediff(time,pt->data[i].time))<1E-6) return 1;
+    }
+    return 0;
 }
 
 

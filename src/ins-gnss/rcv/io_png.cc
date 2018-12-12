@@ -530,13 +530,13 @@ static int io_png_write_raw(const char *fname, const void *data,
 {
     png_structp png_ptr;
     png_infop info_ptr;
-    png_byte *idata = NULL, *idata_ptr = NULL;
-    png_bytep *row_pointers = NULL;
+    png_byte *idata=NULL,*idata_ptr=NULL;
+    png_bytep *row_pointers=NULL;
     png_byte bit_depth;
     /* volatile: because of setjmp/longjmp */
     FILE *volatile fp;
-    const unsigned char *data_u8 = NULL;
-    const unsigned char *data_u8_ptr = NULL;
+    const unsigned char *data_u8=NULL;
+    const unsigned char *data_u8_ptr=NULL;
     const float *data_f32 = NULL;
     const float *data_f32_ptr = NULL;
     float tmp;
@@ -606,15 +606,15 @@ static int io_png_write_raw(const char *fname, const void *data,
         color_type = PNG_COLOR_TYPE_RGB_ALPHA;
         break;
     default:
-        png_destroy_read_struct(&png_ptr, NULL, NULL);
+        png_destroy_read_struct(&png_ptr,NULL,NULL);
         free(row_pointers);
         free(idata);
         (void) fclose(fp);
         return -1;
     }
-    interlace = PNG_INTERLACE_ADAM7;
-    compression = PNG_COMPRESSION_TYPE_BASE;
-    filter = PNG_FILTER_TYPE_BASE;
+    interlace=PNG_INTERLACE_ADAM7;
+    compression=PNG_COMPRESSION_TYPE_BASE;
+    filter=PNG_FILTER_TYPE_BASE;
 
     /* set image header */
     png_set_IHDR(png_ptr, info_ptr, (png_uint_32) nx, (png_uint_32) ny,
@@ -663,17 +663,16 @@ static int io_png_write_raw(const char *fname, const void *data,
         }
         break;
     }
-
     /* set row pointers */
-    for (j = 0; j < ny; j++)
-        row_pointers[j] = idata + (size_t) (nc * nx * j);
-
+    for (j=0;j<ny;j++) {
+        row_pointers[j]=idata+(size_t)(nc*nx*j);
+    }
     /* write out the entire image and end it */
-    png_write_image(png_ptr, row_pointers);
-    png_write_end(png_ptr, info_ptr);
+    png_write_image(png_ptr,row_pointers);
+    png_write_end(png_ptr,info_ptr);
 
     /* clean up and free any memory allocated, close the file */
-    (void) _io_png_write_abort(fp, idata, row_pointers, &png_ptr, &info_ptr);
+    (void)_io_png_write_abort(fp,idata,row_pointers,&png_ptr,&info_ptr);
 
     return 0;
 }
@@ -688,8 +687,8 @@ static int io_png_write_raw(const char *fname, const void *data,
 extern int io_png_write_u8(const char *fname, const unsigned char *data,
                            size_t nx, size_t ny, size_t nc)
 {
-    return io_png_write_raw(fname, (void *) data,
-                            (png_uint_32) nx, (png_uint_32) ny, (png_byte) nc,
+    return io_png_write_raw(fname,(void *)data,
+                            (png_uint_32) nx,(png_uint_32) ny,(png_byte)nc,
                             IO_PNG_U8);
 }
 /**--------------------------------------------------------------------------
@@ -707,7 +706,7 @@ extern int io_png_write_u8(const char *fname, const unsigned char *data,
 extern int io_png_write_f32(const char *fname, const float *data,
                             size_t nx, size_t ny, size_t nc)
 {
-    return io_png_write_raw(fname, (void *) data,
-                            (png_uint_32) nx, (png_uint_32) ny, (png_byte) nc,
+    return io_png_write_raw(fname,(void *) data,
+                            (png_uint_32) nx,(png_uint_32) ny,(png_byte)nc,
                             IO_PNG_F32);
 }

@@ -72,3 +72,4 @@ extern int iscolinear(const double *p1,const double *p2,const double *p3,
 
 
 
+

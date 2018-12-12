@@ -14,7 +14,6 @@
 * history : 2017/10/02 1.0 new
 *-----------------------------------------------------------------------------*/
 #include <carvig.h>
-#include <include/carvig.h>
 
 /* constants/macros ----------------------------------------------------------*/
 #define MAXDT       3600.0                 /* max time difference for ins-gnss coupled */
@@ -71,7 +70,7 @@
 #define MAXSOLS         5                  /* max number of solutions for reboot lc  */
 #define MAXDIFF         10.0               /* max time difference between solution */
 #define MAXVARDIS       (10.0)             /* max variance of disable estimated state */
-#define REBOOT          1                  /* ins loosely coupled reboot if always update fail */
+#define REBOOT          0                  /* ins loosely coupled reboot if always update fail */
 #define USE_MEAS_COV    0                  /* use measurement covariance {xx,yy,zz,xy,xz,yz} for update, not just {xx,yy,zz} */
 #define CHKNUMERIC      1                  /* check numeric for given value */
 #define NOINTERP        0                  /* no interpolate ins position/velocity when gnss measurement if need */
@@ -283,6 +282,8 @@ extern void initlc(insopt_t *opt,insstate_t *ins)
 
     odores(opt->odopt.res);
     odod(opt->odopt.d);
+
+    if (opt->usecam) initvoaid(opt);
 }
 /* free ins-gnss coupled ekf estimated states and it covariance--------------
  * args   : insstate_t *ins  IO  ins states
@@ -301,7 +302,7 @@ extern void freelc(insstate_t *ins)
 
     ins->nx=ins->nb=0;
     ins->gmeas.n=ins->gmeas.nmax=0;
-    resetindex();
+    resetindex(); freevoaid();
 }
 /* propagate matrix for stochastic parameters--------------------------------*/
 static void stochasticPhi(int opt,int ix,int nix,int nx,double dt,double *phi)
@@ -319,7 +320,7 @@ static void getphi_euler(const insopt_t *opt, double dt, const double *Cbe,
                          const double *fib, double *phi)
 {
     double T1[9],T2[9],T3[18],T4[9],W[18]={0},S[9]={0},Sinv[9];
-    double rpy[3],T[9],WC[18]={0};
+    double rpy[3],T[9],WC[18]={0},W2[9];
     double omega[3],re,rn[3],ge[3];
     int i,j,nx=xnX(opt);
 
@@ -341,6 +342,7 @@ static void getphi_euler(const insopt_t *opt, double dt, const double *Cbe,
         return;
     }
     matmul("NN",3,3,3,1.0,Sinv,Cbe,0.0,T4);
+    matmul("NN",3,3,3,1.0,Omge,Omge,0.0,W2);
 
     W[0 ]=omgb[1]; W[3] =omgb[2];
     W[7 ]=omgb[0]; W[10]=omgb[2];
@@ -373,7 +375,7 @@ static void getphi_euler(const insopt_t *opt, double dt, const double *Cbe,
     for (i=IV;i<IV+NV;i++) {
         for (j=IV; j<IV+NV;  j++) phi[i+j*nx]-=2.0*Omge[i-IV+(j-IV)*3]*dt;
         for (j=IA; j<IA+NA;  j++) phi[i+j*nx] =-T1[i-IV+(j-IA)*3]*dt;
-        for (j=IP; j<IP+NP;  j++) phi[i+j*nx] =-2.0*dt/(re*norm(pos,3))*ge[i-IV]*pos[j-IP];
+        for (j=IP; j<IP+NP;  j++) phi[i+j*nx] =-2.0*dt/(re*norm(pos,3))*ge[i-IV]*pos[j-IP]-W2[i-IV+(j-IP)*3]*dt;
         for (j=iba;j<iba+nba;j++) phi[i+j*nx] =Cbe[i-IV+(j-iba)*3]*dt;
         for (j=isa;j<isa+nsa;j++) phi[i+j*nx] =Cbe[i-IV+(j-isa)*3]*fib[j-isa]*dt;
         for (j=ira;j<ira+nra;j++) phi[i+j*nx] =WC [i-IV+(j-ira)*3]*dt;
@@ -403,6 +405,7 @@ static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
 {
     int i,j,nx=xnX(opt);
     double omega[3]={0},T[9],ge[3],re,rn[3],W[18]={0},WC[18]={0},Cbv[9];
+    double W2[9];
 
     trace(3,"getPhi1:\n");
 
@@ -428,6 +431,7 @@ static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
     matmul3("NN",Cbe,fib,omega);
     skewsym3(omega,T); ecef2pos(pos,rn);
     pregrav(pos, ge); re=georadi(rn);
+    matmul("NN",3,3,3,1.0,Omge,Omge,0.0,W2);
 
     W[0 ]=fib[1]; W[3] =fib[2];
     W[7 ]=fib[0]; W[10]=fib[2];
@@ -437,7 +441,7 @@ static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
     for (i=IV;i<IV+NV;i++) {
         for (j=IV; j<IV+NV;  j++) phi[i+j*nx]-=2.0*Omge[i-IV+(j-IV)*3]*dt;
         for (j=IA; j<IA+NA;  j++) phi[i+j*nx] =-T[i-IV+(j-IA)*3]*dt;
-        for (j=IP; j<IP+NP;  j++) phi[i+j*nx] =-2.0*dt/(re*norm(pos,3))*ge[i-IV]*pos[j-IP];
+        for (j=IP; j<IP+NP;  j++) phi[i+j*nx] =-2.0*dt/(re*norm(pos,3))*ge[i-IV]*pos[j-IP]-W2[i-IV+(j-IP)*3]*dt;
         for (j=iba;j<iba+nba;j++) phi[i+j*nx] =Cbe[i-IV+(j-iba)*3]*dt;
         for (j=isa;j<isa+nsa;j++) phi[i+j*nx] =Cbe[i-IV+(j-isa)*3]*fib[j-isa]*dt;
         for (j=ira;j<ira+nra;j++) phi[i+j*nx] =WC [i-IV+(j-ira)*3]*dt;
@@ -477,6 +481,7 @@ static void getF(const insopt_t *opt,const double *Cbe,const double *pos,
     int i,j,nx=xnX(opt);
     double F21[9],F23[9],I[9]={1,0,0,0,1,0,0,0,1},omega[3],rn[3],ge[3],re;
     double W[18]={0},WC[18]={0};
+    double W2[9];
 
     trace(3,"getF:\n");
 
@@ -488,6 +493,7 @@ static void getF(const insopt_t *opt,const double *Cbe,const double *pos,
     ecef2pos(pos,rn);
     pregrav(pos,ge); re=georadi(rn);
     matmul("NT",3,3,1,-2.0/(re*norm(pos,3)),ge,pos,0.0,F23);
+    matmul("NN",3,3,3,1.0,Omge,Omge,0.0,W2);
 
     /* ins attitude system matrix */
     W[0 ]=omgb[1]; W[3 ]=omgb[2];
@@ -509,7 +515,7 @@ static void getF(const insopt_t *opt,const double *Cbe,const double *pos,
     for (i=IV;i<IV+NV;i++) {
         for (j=IA; j<IA+NA;  j++) F[i+j*nx]=-F21[i-IV+(j-IA )*3];
         for (j=IV; j<IV+NV;  j++) F[i+j*nx]=-2.0*Omge[i-IV+(j-IV )*3];
-        for (j=IP; j<IP+NP;  j++) F[i+j*nx]= F23[i-IV+(j-IP )*3];
+        for (j=IP; j<IP+NP;  j++) F[i+j*nx]= F23[i-IV+(j-IP )*3]-W2[i-IV+(j-IP)*3];
         for (j=iba;j<iba+nba;j++) F[i+j*nx]= Cbe[i-IV+(j-iba)*3];
         for (j=isa;j<isa+nsa;j++) F[i+j*nx]= Cbe[i-IV+(j-isa)*3]*fib[j-isa];
         for (j=ira;j<ira+nra;j++) F[i+j*nx]= WC [i-IV+(j-ira)*3];
@@ -1182,7 +1188,9 @@ extern int savegmeas(insstate_t *ins,const sol_t *sol,const gmea_t *gmea)
 #ifdef TRACE
     trace(3,"precious epochs position/velocity measurement:\n");
     for (i=0;i<ins->gmeas.n;i++) {
-        trace(3,"%3d time=%s\n",i+1,time_str(ins->gmeas.data[i].t,4));
+       
+        trace(3,"%3d time=%s\n",i+1,
+              time_str(ins->gmeas.data[i].t,4));
     }
 #endif
     return 1;
@@ -1224,8 +1232,7 @@ extern int rechkatt(insstate_t *ins,const imud_t *imu)
             return 0;
         }
         /* check velocity */
-        if (norm(vel,3)>MAXVEL
-            &&norm(imu->gyro,3)<MAXGYRO) {
+        if (norm(vel,3)>MAXVEL&&norm(imu->gyro,3)<MAXGYRO) {
 
             /* velocity convert to attitude */
             ecef2pos(ins->gmeas.data[NPOS-1].pe,llh);
@@ -1253,9 +1260,9 @@ extern int rechkatt(insstate_t *ins,const imud_t *imu)
             matmul("TN",3,1,3,1.0,ins->Cbe,ins->ve,0.0,pvb);
 
             /* check again */
-            if (fabs(norm(vb,3)-norm(pvb,3))<MINVEL
-                &&(fabs(vb[1])<fabs(pvb[1]))
+            if (fabs(norm(vb,3)-norm(pvb,3))<MINVEL&&(fabs(vb[1])<fabs(pvb[1]))
                 &&(fabs(vb[2])<fabs(pvb[2]))) {
+
                 matcpy(ins->Cbe,Cbe,3,3);
                 trace(3,"recheck attitude ok\n");
                 return 1;
@@ -1322,17 +1329,16 @@ static int rebootlc(const insopt_t *opt,const gmea_t *data,const imud_t *imu,
 
     /* check gps measurement data valid */
     if (!chkgmea(data)) {
-        trace(2,"invalid gps measurement data\n");
+        trace(2,"invalid gnss measurement data\n");
         return 1;
     }
     /* save gps measurement data to buffer */
-    for (i=0;i<MAXSOLS-1;i++) sols[i]=sols[i+1];
-    sols[i]=*data;
+    for (i=0;i<MAXSOLS-1;i++) sols[i]=sols[i+1]; sols[i]=*data;
 
     /* check solution status */
     for (i=0;i<MAXSOLS;i++) {
         if (sols[i].stat>opt->iisu) {
-            trace(2,"gps measurement status check fail\n");
+            trace(2,"gnss measurement status check fail\n");
             return 1;
         }
     }
@@ -1343,23 +1349,22 @@ static int rebootlc(const insopt_t *opt,const gmea_t *data,const imud_t *imu,
         return 1;
     }
     if (norm(imu->gyro,3)>MAXGYRO) {
-        trace(2,"reboot fail due to large rotate speed\n");
+        trace(2,"reboot fail due to large rotation\n");
         return 1;
     }
+#if 1
+    /* check measurement timestamp */
     for (i=0;i<MAXSOLS-1;i++) {
-        if (timediff(sols[i+1].t,sols[i].t)>MAXDIFF) {
-            trace(2,"large time difference of solution\n");
-            return 1;
-        }
-        if (fabs(timediff(sols[i+1].t,sols[i].t))<1E-5) {
-            trace(2,"duplicate gps measurement\n");
+        if (timediff(sols[i+1].t,sols[i].t)>MAXDIFF||fabs(timediff(sols[i+1].t,sols[i].t))<1E-5) {
+            trace(2,"measurement time check fail \n");
             return 1;
         }
     }
+#endif
     /* reboot ins states */
     rebootsta((prcopt_t*)opt->gopt,ins);
-    if (!ant2inins(sols[MAXSOLS-1].t,sols[MAXSOLS-1].pe,
-                   v,opt,NULL,ins,NULL)) {
+    if (!ant2inins(sols[MAXSOLS-1].t,sols[MAXSOLS-1].pe,v,opt,
+                   NULL,ins,NULL)) {
         trace(2,"reboot ins loosely coupled fail\n");
         return 1;
     }
@@ -1367,7 +1372,7 @@ static int rebootlc(const insopt_t *opt,const gmea_t *data,const imud_t *imu,
     return 2;
 }
 /* ins-gnss couple function -------------------------------------------------
- * args  : insopt_t *opt      I  ins-gnss coupled options
+ * args  : insopt_t *opt      I  ins-gnss loosely/tightly coupled options
  *         imud_t *data       I  measurements from imu (corrected)
  *         insstate_t *ins    IO ins states from measurements updates
  *         gmea_t *gnss       I  measurements from gnss positioning
@@ -1400,7 +1405,7 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
         }
     }
 #endif
-    P=mat(nx,nx); x  =mat(nx,1 );
+    P=mat(nx,nx); x  =mat(nx, 1);
     Q=mat(nx,nx); phi=mat(nx,nx);
 
     updstat(opt,ins,ins->dt,ins->x,ins->P,phi,P,x,Q);
@@ -1431,13 +1436,13 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
     /* reboot ins loosely coupled if need */
     if ((flag=rebootlc(opt,upd==INSUPD_TIME?NULL:gnss,data,ins))) {
         if (flag==1) {
-            trace(2,"ins loosely coupled still reboot\n");
+            trace(2,"ins/gnss loosely coupled still reboot\n");
             stat=0;
             goto exit;
         }
         ins->stat=INSS_REBOOT;
         stat=1;
-        trace(3,"ins loosely coupled reboot ok\n");
+        trace(3,"ins/gnss loosely coupled reboot ok\n");
         goto exit;
     }
 #endif

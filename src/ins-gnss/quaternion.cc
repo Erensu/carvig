@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* quaternion.c : quaternion common functions
+* quaternion.cc : quaternion common functions
 *
 * reference :
 *    [1] http://www.euclideanspace.com/maths/geometry/rotations

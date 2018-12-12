@@ -37,7 +37,7 @@ extern int xnRg(const insopt_t *opt) {return ((opt)->estrg==INS_RGEST?6:0);}
 extern int xnRa(const insopt_t *opt) {return ((opt)->estra==INS_RAEST?6:0);}
 
 /* get number of lever arm for body to ant.----------------------------------*/
-extern int xnLa(const insopt_t *opt) {return ((opt)->estlever==INS_RAEST?3:0);}
+extern int xnLa(const insopt_t *opt) {return ((opt)->estlever==INS_LAEST?3:0);}
 
 /* get number of odometry scale factor---------------------------------------*/
 extern int xnOs(const insopt_t *opt) {return ((opt)->estodos?1:0);}
@@ -46,10 +46,16 @@ extern int xnOl(const insopt_t *opt) {return ((opt)->estodol?3:0);}
 /* get number of odometry misalignment of body frame and rear frame----------*/
 extern int xnOa(const insopt_t *opt) {return ((opt)->estodoa?3:0);}
 /* get number of misalignment estimate states of camera to imu body----------*/
-extern int xnCm(const insopt_t *opt)
-{
-    return 0;
-}
+extern int xnCm(const insopt_t *opt) {return ((opt)->estcama?3:0);}
+/* get number of lever arm states of camera to imu body----------------------*/
+extern int xnCla(const insopt_t *opt) {return ((opt)->estcaml?3:0);}
+
+/* get number of camera calibration parameters (fx,fy,cx,cy)-----------------*/
+extern int xnCfo(const insopt_t *opt) {return ((opt)->estcam_fo?4:0);}
+
+/* get number of camera calibration parameters (k1,k2,p1,p2)-----------------*/
+extern int xnCkp(const insopt_t *opt) {return ((opt)->estcam_kp?4:0);}
+
 /* get number of misalignemnt estimate states of b-frame to v-frame----------*/
 extern int xnVm(const insopt_t *opt)
 {
@@ -62,7 +68,7 @@ extern int xnCl(const insopt_t *opt)
 {
     return xnP (opt)+xnV (opt)+xnA (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt)+xnVm(opt);
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt);
 }
 /* get number of observation data frequency----------------------------------*/
 extern int xnIF(const insopt_t *opt)
@@ -181,62 +187,86 @@ extern int xiCm(const insopt_t *opt)
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt);
 }
+/* get index of lever arm of camera to imu ----------------------------------*/
+extern int xiCl(const insopt_t *opt)
+{
+    return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
+           xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
+           xnCm(opt);
+}
+/* get index of camera calibration (fx,fy,cx,cy)------------------------------*/
+extern int xiCfo(const insopt_t *opt)
+{
+    return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
+           xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
+           xnCm(opt)+xnCla(opt);
+}
+/* get index of camera calibration (k1,k2,p1,p3)-----------------------------*/
+extern int xiCkp(const insopt_t *opt)
+{
+    return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
+           xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
+           xnCm(opt)+xnCla(opt)+xnCfo(opt);
+}
 /* get index of misalignment of b-frame to v-frame---------------------------*/
 extern int xiVm(const insopt_t *opt)
 {
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt);
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt);
 }
 /* get index of receiver clock bias state------------------------------------*/
 extern int xiRc(const insopt_t *opt)
 {
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt)+xnVm(opt);
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt);
 }
 /* get index of receiver clock drift-----------------------------------------*/
 extern int xiRr(const insopt_t *opt)
 {
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt)+xnVm(opt)+xnRc(opt);
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt)+xnRc(opt);
 }
 /* get index of ionos (s:satellite no)---------------------------------------*/
 extern int xiIo(const insopt_t *opt,int s)
 {
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+(s-1);
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+(s-1);
 }
 /* get index of tropos (r:0=rov,1:ref)---------------------------------------*/
 extern int xiTr(const insopt_t *opt,int r)
 {
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+xnI (opt)+xnT (opt)/2*r;
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+
+           xnI (opt)+xnT(opt)/2*r;
 }
 /* get index of receiver h/w bias--------------------------------------------*/
 extern int xiLl(const insopt_t *opt,int f)
 {
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+xnI (opt)+xnT (opt)+f;
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+
+           xnI(opt)+xnT(opt)+f;
 }
 /* get index of L5-receiver-dcb ---------------------------------------------*/
 extern int xiDl(const insopt_t *opt)
 {
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+xnI (opt)+xnT (opt)+xnL (opt);
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+
+           xnI(opt)+xnT(opt)+xnL(opt);
 }
 /* get index of phase bias (s:satno,f:freq)----------------------------------*/
 extern int xiBs(const insopt_t *opt,int s,int f)
 {
     return xnA (opt)+xnV (opt)+xnP (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
            xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-           xnCm(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+xnI (opt)+xnT (opt)+xnL (opt)+
-           xnD(opt)+MAXSAT*f+s-1;
+           xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+
+           xnI(opt)+xnT(opt)+xnL(opt)+xnD(opt)+MAXSAT*f+s-1;
 }
 /* disable ins states when filter--------------------------------------------
  * args   :  insopt_t *opt    I   ins update options

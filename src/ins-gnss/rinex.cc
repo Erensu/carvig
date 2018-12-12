@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* rinex.c : rinex functions
+* rinex.cc : rinex functions
 *
 * reference :
 *     [1] W.Gurtner and L.Estey, RINEX The Receiver Independent Exchange Format

@@ -162,8 +162,8 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
 #if CHKNUMERIC
     /* check numeric of estimate state */
     for (i=0;i<3;i++) {
-        if (isnan(ins->re[i])||isnan(ins->ve[i])||
-            isinf(ins->re[i])||isinf(ins->ve[i])) {
+        if (isnan(ins->re[i])||isnan(ins->ve[i])||isnan(ins->ae[i])||
+            isinf(ins->re[i])||isinf(ins->ve[i])||isinf(ins->ae[i])) {
             fprintf(stderr,"check numeric error: nan or inf\n");
             return 0;
         }
@@ -203,11 +203,11 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
         if ((flag=rebootc(ins,opt,obs,n,imu,nav))) {
             if (flag==1) {
                 trace(2,"ins tightly coupled still reboot\n");
-                info=0; goto EXIT;
+                info=0; goto exit;
             }
             trace(3,"ins tightly coupled reboot ok\n");
             ins->stat=INSS_REBOOT; info=1;
-            goto EXIT;
+            goto exit;
         }
 #endif
         /* updates by measurement data */
@@ -253,7 +253,7 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
             info=0;
         }
     }
-EXIT:
+exit:
     free(P); return info;
 }
 

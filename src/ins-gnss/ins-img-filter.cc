@@ -11,7 +11,6 @@
  *----------------------------------------------------------------------------*/
 #include <carvig.h>
 #include <emmintrin.h>
-#include <pmmintrin.h>
 
 /*----------------------------------------------------------------------------*/
 static void integral_image(const uint8_t* in, int32_t* out, int w, int h)
@@ -314,6 +313,7 @@ static void convolve_col_p1p1p0m1m1_5x5(const unsigned char* in, int16_t* out,
 {
     memset(out,0,w*h*sizeof(int16_t));
     assert(w%16==0&&"width must be multiple of 16!");
+
     const int w_chunk=w/16;
     __m128i* i0=(__m128i*)(in);
     __m128i* i1=(__m128i*)(in)+w_chunk*1;
@@ -365,6 +365,7 @@ static void convolve_row_p1p1p0m1m1_5x5(const int16_t* in, int16_t* out,
 static void convolve_cols_3x3(const unsigned char* in, int16_t* out_v,
                               int16_t* out_h, int w, int h) {
     assert(w%16==0&&"width must be multiple of 16!");
+
     const int w_chunk=w/16;
     __m128i* i0=(__m128i*)(in);
     __m128i* i1=(__m128i*)(in)+w_chunk*1;
@@ -457,11 +458,11 @@ extern void blob5x5(const uint8_t* in, int16_t* out, int w, int h)
     const int32_t* i14=integral+1+4*w;
     const int32_t* i44=integral+4+4*w;
     const uint8_t* im22=in+3+3*w;
-    for(;out_ptr!=out_end;out_ptr++,i00++,i50++,i05++,
-            i55++,i11++,i41++,i14++,i44++,im22++) {
+    for(;out_ptr!=out_end;out_ptr++,i00++,i50++,i05++,i55++,i11++,
+        i41++,i14++,i44++,im22++) {
         int32_t result=0;
-        result=-(*i55-*i50-*i05+*i00 );
-        result+=2*(*i44-*i41-*i14+*i11 );
+        result=-(*i55-*i50-*i05+*i00);
+        result+=2*(*i44-*i41-*i14+*i11);
         result+=7**im22;
         *out_ptr=result;
     }

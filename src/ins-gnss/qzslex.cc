@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* qzslex.c : qzss lex functions
+* qzslex.cc : qzss lex functions
 *
 * references :
 *     [1] IS-QZSS v.1.1, Quasi-Zenith Satellite System Navigation Service

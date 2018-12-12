@@ -730,9 +730,6 @@ typedef struct {                /* time struct */
 } gtime_t;
 
 typedef struct {                /* camera model struct type */
-    int nc,nr;                  /* camera resolution */
-    int type;                   /* distortion model of the camera */
-    int fps;                    /* frames per second of camera */
     double k1,k2,k3,k4,k5,k6;   /* distortion parameter */
     double p1,p2,s1,s2,s3,s4;
     double K[9];                /* intrinsic parameter matrix */
@@ -741,7 +738,6 @@ typedef struct {                /* camera model struct type */
 typedef struct feature {        /* feature data type */
     gtime_t time;               /* feature point extract time */
     double u,v;                 /* pixel u,v coord */
-    long int id;                /* id of feature point */
     int valid,status;           /* valid flag of feature/feature track status*/
     int descrlen;               /* length of descriptor */
     double descr[DESCR_MAXLEN]; /* descriptor */
@@ -749,7 +745,7 @@ typedef struct feature {        /* feature data type */
 
 typedef struct img {            /* image data type */
     gtime_t time;               /* data time */
-    int w,h;                    /* width and height of image */
+    int w,h,id;                 /* width and height of image/frame id of image */
     unsigned char *data;        /* image data buffer */
 } img_t;
 
@@ -757,14 +753,19 @@ typedef struct trackd {         /* feature points track record */
     gtime_t ts,te;              /* start/end timestamp */
     int n,nmax;                 /* number and max number of feature points */
     int last_idx,first_frame,last_frame;
-                                /* last index/first frame index/last frame index of this track */
+                                /* last feature point index/first frame index/last frame index of this track */
+    unsigned char flag;         /* 0: update,1: new track,2: track lost,3: bad track,4: used to filter */
     long int uid;               /* a unique identifier of this track */
+    char name[16];              /* name of track (equals to feature point's name) */
     struct feature *data;       /* track feature data */
     struct img     *I;          /* store tracking image data for debugs */
+    double xyz[3];              /* feature position in ecef */
 } trackd_t;
 
 typedef struct track {          /* store all feature track data type */
     int n,nmax;                 /* number and max number of track data */
+    int newtrack[MAXBUFF],updtrack[MAXBUFF],nnew,nupd;
+                                /* new/updated feature track index in `.data' */
     trackd_t *data;             /* track data */
 } track_t;
 
@@ -970,18 +971,20 @@ typedef struct {            /* ins states type */
 
     double fbp[3],omgbp[3]; /* precious epoch corrected specific-force (b-frame)/angular rate (b-frame) */
     double lever[3];        /* lever arm for body to ant. (m) */
-    double lbc[3];          /* lever arm for body to camera (for additional)*/
+    double lbc[3],Cbc[9];   /* lever arm/misalignment for body to camera (for additional) */
 
     double Cbr[9];          /* transform matrix from odometry rear frame to body frame */
     double os;              /* odometry scale factor */
     double rbl[3];          /* lever arm of odometry rear frame to body frame */
     double vr[3];           /* odometry velocity in rear frame */
 
+    double fx,fy,ox,oy,k1,k2,p1,p2;
+                            /* camera calibration parameters */
     double Cvb[9],len;      /* misalignment from v-frame to b-frame (defined at dual ant.) and length of dual ant. */
 
     double dopv[3];         /* doppler velocity (ecef, m/s) */
 
-    int nx,nb;              /* numbers of estimated states/fixed states (except phase bias) */
+    int nx,nb;              /* numbers of estimated states,fixed states (except phase bias) */
 
     double *x,*P;           /* ekf estimated states/covariance matrix */
     double *xa,*Pa;         /* estimated states and covariance for ins-gnss loosely coupled */
@@ -1044,15 +1047,15 @@ typedef struct {            /* imu error model type */
     double ba[3];           /* accl constant bias (ug) */
     double Ma[9],Mg[9];     /* non-orthogonal between sensor axes (ppm) */
     double Gg[9];           /* g-dependent bias for a gyro triad */
-    double TauG;            /* gyro correlated time for Markov process (s) */
-    double TauA;            /* accl correlated time for Markov process (s) */
+    double sR0G,TauG;       /* gyro correlated bias (TauG: time for Markov process (s),sROG: deg/h */
+    double sROA,TauA;       /* accl correlated bias (TauA: time for Markov process (s),sROA: ug */
     double wbg[3];          /* angular random walk (deg/sqrt(h)) */
     double wba[3];          /* velocity random walk (ug/sqrt(Hz)) */
 } imu_err_t;
 
 typedef struct {            /* ins navigation initial fine alignments type */
     double eb[3];           /* gyro constant bias (deg/h) */
-    double db[3];           /* acc constant bias (ug) */
+    double db[3];           /* accl constant bias (ug) */
     double web[3];          /* angular random walk (deg/sqrt(h)) */
     double wdb[3];          /* velocity random walk (ug/sqrt(Hz)) */
     int ns;                 /* numbers of imu data for ins alignment */
@@ -1121,14 +1124,14 @@ typedef struct {            /* ins options type */
     int estrg;              /* estimate non-orthogonal between sensor axes for gyro. */
     int estra;              /* estimate non-orthogonal between sensor axes for accl. */
     int estlever;           /* estimate lever arm for body to ant. */
-
-    int odo;                /* use odometry velocity measurement to aid ins */
-    int pose_aid;           /* use pose measurement from dual ant. to aid ins navigation */
-
     int estodos;            /* estimate odometry scale factor */
     int estodoa;            /* estimate odometry misalignment of body frame and rear frame */
     int estodol;            /* estimate odometry lever arm of rear frame to body frame */
     int estmisv;            /* estimate misalignment from v-frame (defined at dual ant.) to b-frame */
+    int estcama;            /* estimate misalignment from b-frame to c-frame */
+    int estcaml;            /* estimate lever arm from b-frame to c-frame */
+    int estcam_fo;          /* estimate camera calibration parameters: fx,fy,ox,oy */
+    int estcam_kp;          /* estimate camera calibration parameters: k1,k2,p1,p2 */
 
     int baproopt;           /* accl. bias stochastic process settings (INS_RANDOM_WALK,...) */
     int bgproopt;           /* gryo. bias stochastic process settings (INS_RANDOM_WALK,...) */
@@ -1141,6 +1144,10 @@ typedef struct {            /* ins options type */
     int olproopt;           /* odometry lever arm stochastic process option */
     int oaproopt;           /* odometry misalignment stochastic process option */
     int cmaopt,vmaopt;      /* camera misalignment and v-frame misalignment to b-frame stochastic process option */
+    int claopt;             /* camera lever arm from b-frame to c-frame stochastic process option */
+
+    int odo;                /* use odometry velocity measurement to aid ins */
+    int pose_aid;           /* use pose measurement from dual ant. to aid ins navigation */
 
     int align_vn;           /* ins initial align uses kalman filter with vn as measurement in static-alignment mode */
     int align_fn;           /* ins initial align uses kalman filter with fn as measurement in static-alignment mode */
@@ -1165,8 +1172,7 @@ typedef struct {            /* ins options type */
     int detst;              /* detect static imu measurement data */
     int magh;               /* magnetometer auxiliary */
 
-    int tc;                 /* ins-gnss tightly coupled mode (INSTC_???) */
-    int lc;                 /* ins-gnss loosely coupled mode (INSLC_???) */
+    int lc,tc;                 /* ins-gnss loosely/tightly coupled mode (INSLC_???/INSTC_???) */
     int dopp;               /* use doppler measurement to aid ins updates states */
     int usecam;             /* use camera measurement to aid ins update states */
     int intpref;            /* time-interpolation for observation when tightly coupled */
@@ -2359,6 +2365,7 @@ EXPORT void matfprint(const double *A, int n, int m, int p, int q, FILE *fp);
 
 EXPORT void matt(const double *A,int n,int m,double *At);
 EXPORT int svd(const double *A,int m,int n,double *U,double *W,double *V);
+EXPORT int null(const double *A,int m,int n,double *N,int *p,int *q);
 EXPORT void matpow(const double *A,int m,int p,double *B);
 EXPORT void dialog(const double *v,int n,double *D);
 EXPORT void mat2dmat(const double *a,double **b,int m,int n);
@@ -2853,6 +2860,7 @@ EXPORT void seteye(double* A,int n);
 EXPORT void setzero(double *A,int n,int m);
 EXPORT void skewsym3(const double *ang, double *C);
 EXPORT void skewsym3x(double x,double y,double z,double *C);
+EXPORT int resize(double **A,int m,int n,int p,int q);
 EXPORT double gravity0(const double *pos);
 EXPORT void gravity(const double *re, double *ge);
 EXPORT void initins(insstate_t *ins, const double *re, double angh,
@@ -2999,7 +3007,6 @@ EXPORT int ve2vr(const double *ve,const double *Cbe,const double *Cbr,
                  double *vr);
 EXPORT int odo(const insopt_t *opt,const imud_t *imu,const odod_t *odo,
                insstate_t *ins);
-EXPORT int readodo(const char *file,odo_t *odo);
 EXPORT void initodo(const odopt_t *opt,insstate_t *ins);
 
 /* magnetic heading-----------------------------------------------------------*/
@@ -3108,6 +3115,9 @@ EXPORT int xnD (const insopt_t *opt);
 EXPORT int xnB (const insopt_t *opt);
 EXPORT int xnRx(const insopt_t *opt);
 EXPORT int xnCm(const insopt_t *opt);
+EXPORT int xnCla(const insopt_t *opt);
+EXPORT int xnCfo(const insopt_t *opt);
+EXPORT int xnCkp(const insopt_t *opt);
 EXPORT int xnVm(const insopt_t *opt);
 EXPORT int xiVm(const insopt_t *opt);
 EXPORT int xnX (const insopt_t *opt);
@@ -3126,6 +3136,9 @@ EXPORT int xiOs(const insopt_t *opt);
 EXPORT int xiOl(const insopt_t *opt);
 EXPORT int xiOa(const insopt_t *opt);
 EXPORT int xiCm(const insopt_t *opt);
+EXPORT int xiCl(const insopt_t *opt);
+EXPORT int xiCfo(const insopt_t *opt);
+EXPORT int xiCkp(const insopt_t *opt);
 EXPORT int xiRc(const insopt_t *opt);
 EXPORT int xiRr(const insopt_t *opt);
 EXPORT int xiIo(const insopt_t *opt,int s);
@@ -3198,6 +3211,8 @@ EXPORT int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
 EXPORT int inittrack(trackd_t *data,const voopt_t *opt);
 EXPORT void drawtrack(const track_t *track,const voopt_t *opt);
 EXPORT trackd_t *gettrack(const track_t *track,int uid);
+EXPORT int outofview(const track_t *track,const voopt_t *opt,
+                     int id,gtime_t time);
 
 /* pnp pose estimate function------------------------------------------------*/
 EXPORT int p3pthree(const feature *feats,int nf,double *xp,int np,
@@ -3208,6 +3223,21 @@ EXPORT int p3p(const feature *feats,int nf,const double *xp,int np,
 /* visual odometry utils-----------------------------------------------------*/
 EXPORT int iscolinear(const double *p1,const double *p2,const double *p3,
                       int dim, int flag);
+EXPORT int triangulate3D(const double *C21,const double *t12_1,
+                         const double *obs1,const double *obs2,
+                         const double *K,double *X);
+
+/* camera distort/undistort function-----------------------------------------*/
+EXPORT void distortradtan(const cam_t *cam,const double *in,double *out,
+                          double *J);
+EXPORT int undistortradtan(const cam_t *cam,const double *in,double *out,
+                           double *J);
+
+/* vo aid to ins/gnss coupled functions---------------------------------------*/
+EXPORT int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
+                   const img_t *img,int flag);
+EXPORT void initvoaid(insopt_t *opt);
+EXPORT void freevoaid();
 
 #ifdef __cplusplus
 }

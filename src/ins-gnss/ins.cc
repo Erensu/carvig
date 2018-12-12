@@ -567,7 +567,7 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
 
     if ((dt=timediff(data->time,ins->time))>MAXDT||fabs(dt)<1E-6) {
 
-        /* update information */
+        /* update time information */
         ins->dt=timediff(data->time,ins->time);
         ins->ptime=ins->time;
         ins->time =data->time;
@@ -1162,7 +1162,7 @@ extern int updateinsn(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     double das[3]={0},dvs[3]={0};
     int i;
 
-    trace(3,"updateins:\n");
+    trace(3,"updateinsn:\n");
 
     trace(5,"ins(-)=\n"); traceins(5,ins);
 
@@ -1174,7 +1174,7 @@ extern int updateinsn(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
 
     if ((dt=timediff(data->time,ins->time))>MAXDT||fabs(dt)<1E-6) {
 
-        /* update information */
+        /* update time information */
         ins->dt=timediff(data->time,ins->time);
         ins->ptime=ins->time;
         ins->time =data->time;

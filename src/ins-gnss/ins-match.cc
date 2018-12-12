@@ -1305,9 +1305,6 @@ static void bucketfeat(const matchopt_t *opt,const match_set_t *mp_dense,
         rlist=imat(1,buckets[i].n);
 
         n=getrand(buckets[i].n,maxnf>buckets[i].n?buckets[i].n:maxnf,rlist);
-
-        traceimat(rlist,1,n,5,1);
-
         for (j=0;j<n;j++) {
             add_match_set_match_point(mp_bucket,&buckets[i].data[rlist[j]]);
         }
@@ -1322,16 +1319,18 @@ static void backupimg(const img_t *data,match_t *match)
 {
     int size=data->h*data->w*sizeof(unsigned char);
 
-    memcpy(match->Ip.data,match->Ic.data,size);
     memcpy(match->Ic.data,data->data,size);
+    memcpy(match->Ip.data,match->Ic.data,size);
 
-    match->Ip.w=match->Ic.w;
-    match->Ip.h=match->Ic.h;
+    match->Ip.w   =match->Ic.w;
+    match->Ip.h   =match->Ic.h;
+    match->Ip.id  =match->Ic.id;
     match->Ip.time=match->Ic.time;
 
-    match->Ic.w=data->w;
-    match->Ic.h=data->h;
-    match->Ic.time=data->time; 
+    match->Ic.w   =data->w;
+    match->Ic.h   =data->h;
+    match->Ic.id  =data->id;
+    match->Ic.time=data->time;
 }
 /* initial match struct-------------------------------------------------------
  * args:    match_t *match  IO  match struct
@@ -1378,8 +1377,8 @@ extern void free_match(match_t *match)
     free_match_buf();
 }
 /* match feature points from input image data---------------------------------
- * args:  match_t *m         IO  match struct data
- *        img_t *img         I   input image data
+ * args:    match_t *m         IO  match struct data
+ *          img_t *img         I   input image data
  * return: number of matched feature points
  * ---------------------------------------------------------------------------*/
 extern int matchfeats(match_t *pmatch,const img_t *img)
@@ -1403,11 +1402,11 @@ extern int matchfeats(match_t *pmatch,const img_t *img)
         return 0;
     }
     /* match feature points */
-    matchfeatures(&pmatch->opt,&pmatch->mp_sparse,
-                  &pmatch->mp_dense);
+    matchfeatures(&pmatch->opt,&pmatch->mp_sparse,&pmatch->mp_dense);
 
     /* bucket features extract */
-    bucketfeat(&pmatch->opt,&pmatch->mp_dense,&pmatch->mp_bucket,pmatch->opt.bucket.nmax);
+    bucketfeat(&pmatch->opt,&pmatch->mp_dense,&pmatch->mp_bucket,
+               pmatch->opt.bucket.nmax);
 
 #if TRACR_FEAT_POINTS
     trace_match_points(&pmatch->mp_bucket);

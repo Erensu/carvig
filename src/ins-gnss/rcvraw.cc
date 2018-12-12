@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* rcvraw.c : receiver raw data functions
+* rcvraw.cc : receiver raw data functions
 *
 * references :
 *     [1] IS-GPS-200D, Navstar GPS Space Segment/Navigation User Interfaces,
