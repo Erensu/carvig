@@ -248,20 +248,23 @@ extern void initvoaid(insopt_t *opt)
     init_match(&matchs,&opt->voopt.match);
 
     vofilt.nx=xnX(opt);
-    vofilt.Px=zeros(vofilt.nx,vofilt.nx);
+    vofilt.Px=zeros(vofilt.nx,vofilt.nx); vofilt.n=vofilt.nmax=0;
     return;
 }
 /* free vo-aid----------------------------------------------------------------*/
 extern void freevoaid()
 {
-    int i;
     trace(3,"freevoaid:\n");
+    int i;
 
     freetrackset(&tracks);
     free_match(&matchs);
-    free(vofilt.Px);
-    for (i=0;i<vofilt.n;i++) hashtable_destroy(vofilt.data[i].trackfeat);
-    free(vofilt.data);
+    if (vofilt.Px) free(vofilt.Px);
+
+    for (i=0;i<vofilt.n;i++) {
+        hashtable_destroy(vofilt.data[i].trackfeat);
+    }
+    if (vofilt.data) free(vofilt.data);
     return;
 }
 /* resize matrix--------------------------------------------------------------

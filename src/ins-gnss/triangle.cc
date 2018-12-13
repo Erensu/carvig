@@ -9,7 +9,7 @@
 /*                                              "8oo8D                       */
 /*                                                                           */
 /*  A Two-Dimensional Quality Mesh Generator and Delaunay Triangulator.      */
-/*  (triangle.c)                                                             */
+/*  (triangle.cc)                                                            */
 /*                                                                           */
 /*  Version 1.6                                                              */
 /*  July 28, 2005                                                            */

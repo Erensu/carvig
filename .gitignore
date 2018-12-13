@@ -1,1 +1,27 @@
 # Created by .ignore support plugin (hsz.mobi)
+/lib/
+.idea/carvig.iml
+.idea/dictionaries/
+.idea/markdown-navigator.xml
+.idea/markdown-navigator/
+.idea/misc.xml
+.idea/modules.xml
+.idea/workspace.xml
+CMakeLists.txt~
+README.md~
+bin/
+cmake-build-debug/
+cmake/
+lib/libsurf.a
+paper/
+src/ins-gnss/ins-doppler.cc~
+src/ins-gnss/ins-dualant-calib.cc~
+src/ins-gnss/ins-flow-track.cc~
+src/ins-gnss/ins-init-rt.cc~
+src/ins-gnss/ins-pose.cc~
+src/ins-gnss/preceph.cc~
+src/ins-gnss/rcv/kitti.cc~
+src/ins-gnss/rtksvr.cc~
+test/CMakeLists.txt~
+test/bin/
+test/data/

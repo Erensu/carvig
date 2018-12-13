@@ -243,7 +243,7 @@ extern int readimub(const char *file,imu_t* imu,int decfmt,int imufmt,int coor,
                 trace(5,"readimub: imu->n=%d nmax=%d\n",imu->n,imu->nmax);
 
                 siz=sizeof(imud_t)*(imu->nmax+=4096);
-                if (!(imu->data=(imud_t *)realloc(imu->data,siz))) {
+                if (!(imu->data=(imud_t*)realloc(imu->data,siz))) {
 
                     fprintf(stderr,"readimub :memory allocation error\n");
                     free(imu->data); imu->n=imu->nmax=0;

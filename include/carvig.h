@@ -3238,6 +3238,9 @@ EXPORT int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
                    const img_t *img,int flag);
 EXPORT void initvoaid(insopt_t *opt);
 EXPORT void freevoaid();
+EXPORT int kalibrrosbag(const char *datfile,const char *imufile,
+                        const char *imgdir,
+                        const char *output);
 
 #ifdef __cplusplus
 }

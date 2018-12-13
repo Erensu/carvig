@@ -27,14 +27,16 @@ if(NOT OpenCV_FOUND)
     endif()
 endif()
 find_package(Eigen3 3.1.0 REQUIRED)
+find_package(PythonLibs REQUIRED)
 
-include_directories(
-        ${PROJECT_SOURCE_DIR}
+include_directories(${PROJECT_SOURCE_DIR}
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/vision
         ${PROJECT_SOURCE_DIR}/src/ins-gnss/rcv
         ${EIGEN3_INCLUDE_DIR}
 )
+include_directories(${PYTHON_INCLUDE_DIRS})
+
 file(GLOB SRC_FILES "src/ins-gnss/*.cc" "src/ins-gnss/rcv/*.cc")
 
 add_library(carvig ${SRC_FILES})
