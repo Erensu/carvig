@@ -9,6 +9,8 @@
 *-----------------------------------------------------------------------------*/
 #include <carvig.h>
 
+#define MAX_INDEX          1000
+
 /* copy file------------------------------------------------------------------*/
 static int copyfile(const char* source_path,const char *destination_path)
 {
@@ -37,7 +39,7 @@ extern int kalibrrosbag(const char *datfile,const char *imufile,const char *imgd
 {
     char imgfile_src[1024],imgfile_des[1024],imupath[1024];
     char camdir[1024];
-    int flag,i; long int timestamp;
+    int flag,i,n=0; long int timestamp;
 
     raw_t raw={{0}};
     FILE *fp_dat;
@@ -56,6 +58,7 @@ extern int kalibrrosbag(const char *datfile,const char *imufile,const char *imgd
         flag=input_m39_mixf(&raw,fp_dat);
         if (flag==-2) break;
         if (flag==11) {
+            if (n++>MAX_INDEX) break;
 
             if (get_m39_img(imgdir,raw.m39.fts.tv_sec,raw.m39.fts.tv_nsec,imgfile_src)) {
                 timestamp=(long int)(time2gpst(raw.m39.time,NULL)*1E9);
@@ -69,7 +72,7 @@ extern int kalibrrosbag(const char *datfile,const char *imufile,const char *imgd
         }
     }
     fclose(fp_dat);
-    
+
     /* output imu raw data */
     imu_t imu={0};
     readimub(imufile,&imu,IMUDECFMT_RATE,IMUFMT_GI310,
@@ -85,12 +88,12 @@ extern int kalibrrosbag(const char *datfile,const char *imufile,const char *imgd
     for (i=0;i<imu.n;i++) {
 
         /* write imu measurement data */
-        timestamp=(long int)(time2gpst(raw.imu.time,NULL)*1E9);
+        timestamp=(long int)(time2gpst(imu.data[i].time,NULL)*1E9);
 
         fprintf(fp_dat,"%ld,%lf,%lf,%lf,%lf,%lf,%lf\n",timestamp,
-                imu.data[i].gyro[0],
-                imu.data[i].gyro[1],
-                imu.data[i].gyro[2],
+                imu.data[i].gyro[0]*D2R,
+                imu.data[i].gyro[1]*D2R,
+                imu.data[i].gyro[2]*D2R,
                 imu.data[i].accl[0],
                 imu.data[i].accl[1],
                 imu.data[i].accl[2]);

@@ -285,7 +285,7 @@ extern "C"{
 #define MAXIMU      500                 /* max number of imu measurement data buffer */
 #define MAXSOL      100                 /* max number of solution data buffer */
 #define MAXIMUBUF   1000                /* max number of imu measurement data buffer */
-#define MAXIMGBUF   2000                /* max number of image data buffer */
+#define MAXIMGBUF   100                 /* max number of image data buffer */
 #define MAXPOSEBUF  1000                /* max number of pose measurement buffer */
 #define MAXPOSE     50                  /* max number of input pose measurement data */
 #define MAXIMG      50                  /* max number of input image data */
@@ -743,7 +743,7 @@ typedef struct feature {        /* feature data type */
     double descr[DESCR_MAXLEN]; /* descriptor */
 } feat_data_t;
 
-typedef struct img {            /* image data type */
+typedef struct  {               /* image data type */
     gtime_t time;               /* data time */
     int w,h,id;                 /* width and height of image/frame id of image */
     unsigned char *data;        /* image data buffer */
@@ -1636,7 +1636,7 @@ typedef struct {        /* solution type */
     double var[6];      /* camera measurement variance from precious to current frame */
 
     solvel_t sol_vel;   /* NovAtel OEM6 velocity solution */
-    imud_t imu;         /* correction imu measurement data */
+    imud_t imu;         /* correctioned imu measurement data */
 } sol_t;
 
 typedef struct {        /* solution buffer type */
@@ -2075,6 +2075,7 @@ typedef struct {        /* receiver raw data control type */
     obs_t obs;          /* observation data */
     sol_t sol;          /* solution data from ublox message */
     obs_t obuf;         /* observation data buffer */
+    img_t img;          /* image raw data */
     nav_t nav;          /* satellite ephemerides */
     sta_t sta;          /* station parameters */
     gsof_t gsof;        /* position information from a trimble proprietary format
@@ -2240,6 +2241,7 @@ typedef struct {        /* RTK server type */
     sol_t  pvt[MAXSOLBUF];    /* PVT solutions for ins/gnss couple */
     imud_t imu[MAXIMUBUF];    /* imu measurement data of rover station */
     pose_meas_t pose[MAXPOSEBUF]; /* pose measurement from camera or dual ant. */
+    img_t  img[MAXIMGBUF];        /* image raw data from camera measurement */
     syn_t syn;                    /* time synchronization index of buffer */
     nav_t nav;                    /* navigation data */
     sbsmsg_t sbsmsg[MAXSBSMSG];   /* SBAS message buffer */
@@ -3241,6 +3243,46 @@ EXPORT void freevoaid();
 EXPORT int kalibrrosbag(const char *datfile,const char *imufile,
                         const char *imgdir,
                         const char *output);
+
+/* ins-gnss-vo coupled post-processing----------------------------------------*/
+EXPORT int igvopostpos(const gtime_t ts, gtime_t te, double ti, double tu,
+                       const prcopt_t *popt, const solopt_t *sopt,
+                       const filopt_t *fopt, char **infile, int n,int port,
+                       const char *outfile);
+
+/* car-vig position server functions------------------------------------------*/
+EXPORT int carvigsvrmark(rtksvr_t *svr, const char *name, const char *comment);
+EXPORT void rtksvrsstat(rtksvr_t *svr, int *sstat, char *msg);
+EXPORT int carvigsvrostat(rtksvr_t *svr, int rcv, gtime_t *time, int *sat,
+                          double *az, double *el, int **snr, int *vsat);
+
+EXPORT void carvigsvrclosestr(rtksvr_t *svr, int index);
+EXPORT int carvigsvropenstr(rtksvr_t *svr, int index, int str, const char *path,
+                            const solopt_t *solopt);
+
+EXPORT int carvigsvrstart(rtksvr_t *svr, int cycle, int buffsize, int *strs,
+                          char **paths, int *formats, int navsel, char **cmds,
+                          char **cmds_periodic, char **rcvopts, int nmeacycle,
+                          int nmeareq, const double *nmeapos, prcopt_t *prcopt,
+                          solopt_t *solopt, stream_t *moni, char *errmsg);
+
+EXPORT void carvigsvrstop(rtksvr_t *svr, char **cmds);
+EXPORT void rtksvrlock  (rtksvr_t *svr);
+EXPORT void rtksvrunlock(rtksvr_t *svr);
+EXPORT int carvigsvrinit(rtksvr_t *svr);
+EXPORT void carvigsvrfree(rtksvr_t *svr);
+
+/* virtual console functions--------------------------------------------------*/
+EXPORT vt_t *vt_open(int sock, const char *dev);
+EXPORT void vt_close(vt_t *vt);
+EXPORT int vt_getc(vt_t *vt, char *c);
+EXPORT int vt_gets(vt_t *vt, char *buff, int n);
+EXPORT int vt_putc(vt_t *vt, char c);
+EXPORT int vt_puts(vt_t *vt, const char *buff);
+EXPORT int vt_printf(vt_t *vt, const char *format, ...);
+EXPORT int vt_chkbrk(vt_t *vt);
+EXPORT int vt_openlog(vt_t *vt, const char *file);
+EXPORT void vt_closelog(vt_t *vt);
 
 #ifdef __cplusplus
 }
