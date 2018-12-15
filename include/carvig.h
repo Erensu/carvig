@@ -758,7 +758,7 @@ typedef struct trackd {         /* feature points track record */
     long int uid;               /* a unique identifier of this track */
     char name[16];              /* name of track (equals to feature point's name) */
     struct feature *data;       /* track feature data */
-    struct img     *I;          /* store tracking image data for debugs */
+    img_t   *I;                 /* store tracking image data for debugs */
     double xyz[3];              /* feature position in ecef */
 } trackd_t;
 

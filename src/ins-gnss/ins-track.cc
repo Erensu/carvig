@@ -113,7 +113,7 @@ static int addnewtrack(track_t *track,const trackd_t *data)
 /* create a new track---------------------------------------------------------*/
 static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame,
                     const voopt_t *opt,track_t *track,
-                    const img *pimg,const img *cimg)
+                    const img_t *pimg,const img_t *cimg)
 {
     /* new track. */
     feature fp,fc; trackd_t ntrack;

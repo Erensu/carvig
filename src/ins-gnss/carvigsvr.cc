@@ -1491,7 +1491,7 @@ static void *rtksvrthread(void *arg)
         /* sleep until next cycle */
         sleepms(svr->cycle-cputime);
     }
-    for (i=0;i<MAXSTRRTK;i++) rtksvrclosestr(svr,i);
+    for (i=0;i<MAXSTRRTK;i++) carvigsvrclosestr(svr,i);
     for (i=0;i<5;i++) {
         svr->nb[i]=svr->npb[i]=0;
         free(svr->buff[i]); svr->buff[i]=NULL;
