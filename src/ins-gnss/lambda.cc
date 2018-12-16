@@ -12,7 +12,7 @@
 * history : 2007/01/13 1.0 new
 *           2015/05/31 1.1 add api lambda_reduction(), lambda_search()
 *-----------------------------------------------------------------------------*/
-#include "carvig.h"
+#include <carvig.h>
 
 /* constants/macros ----------------------------------------------------------*/
 #define LOOPMAX     10000           /* maximum count of search loop */

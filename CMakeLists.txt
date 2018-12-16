@@ -41,7 +41,8 @@ file(GLOB SRC_FILES "src/ins-gnss/*.cc" "src/ins-gnss/rcv/*.cc")
 
 add_library(carvig ${SRC_FILES})
 target_link_libraries(carvig blas lapack z pthread
-                      /usr/local/lib/libpng.so)
+                      /usr/local/lib/libpng.so
+                      jpeg)
 
 set_target_properties(carvig PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
                       ${PROJECT_SOURCE_DIR}/lib)

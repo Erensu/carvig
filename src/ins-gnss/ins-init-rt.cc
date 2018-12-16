@@ -88,7 +88,9 @@ extern int insinitrt(rtksvr_t *svr,const sol_t *sol,const imud_t *imu)
     /* save pvt solution buffer */
     for (i=0;i<MAXSOL-1;i++) sols[i]=sols[i+1]; sols[i]=*sol;
     for (i=0;i<MAXSOL;i++) {
-        if (sols[i].stat>iopt->iisu||sols[i].stat==SOLQ_NONE) return 0;
+        if (sols[i].stat>iopt->iisu||sols[i].stat==SOLQ_NONE) {
+            return 0;
+        }
     }
     /* compute velocity from solutions */
     matcpy(vr,sols[MAXSOL-1].rr+3,1,3);
@@ -111,8 +113,7 @@ extern int insinitrt(rtksvr_t *svr,const sol_t *sol,const imud_t *imu)
     }
     /* initial ins states */
     initinsrt(svr);
-    if (!ant2inins(sols[MAXSOL-1].time,sols[MAXSOL-1].rr,
-                   vr,iopt,NULL,ins,NULL)) {
+    if (!ant2inins(sols[MAXSOL-1].time,sols[MAXSOL-1].rr,vr,iopt,NULL,ins,NULL)) {
         trace(2,"initial ins state fail\n");
         return 0;
     }

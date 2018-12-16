@@ -14,6 +14,7 @@
 #define M39MSGLEN  27          /* m39-mix message length  */
 #define CENTURY    21          /* century of current year */
 #define MINCHGC    10          /* min counts of zda-time changing */
+#define READIMG    1           /* read image raw data when post-process */
 
 /* check sum-----------------------------------------------------------------*/
 static int chksum(const unsigned char *buff, int len, unsigned char data)
@@ -80,11 +81,11 @@ static int decode_m39_mix(raw_t *raw)
 {
     static int flag=0,j=0,week;
     static double ppsp=0.0;
-    unsigned char *p=raw->buff+4;
-    char imgfile[256];
+    unsigned char *p=raw->buff+4; char imgpath[1024];
     uint64_t ts=0,tn=0;
     gtime_t time;
     double epoch[6],dt;
+    prcopt_t *popt=(prcopt_t*)raw->optp;
 
     /* pps time in tx2-clock */
     ts=p[0]; ts=ts<<8|p[1]; ts=ts<<8|p[2]; ts=ts<<8|p[3];
@@ -119,6 +120,26 @@ static int decode_m39_mix(raw_t *raw)
         /* get frame time */
         dt=tsp2secs(raw->m39.fts)-tsp2secs(raw->m39.pps);
         raw->m39.time=gpst2time(week,raw->m39.sow+dt);
+#if READIMG
+        /* load jpg image file */
+        sprintf(imgpath,"%s/%d_%ld_%ld.jpg",popt->monodir,raw->img.id+1,
+                raw->m39.fts.tv_sec,
+                raw->m39.fts.tv_nsec);
+
+        if (!readjpeg(imgpath,raw->m39.time,&raw->img,0)) {
+            if (get_m39_img(popt->monodir,raw->m39.fts.tv_sec,raw->m39.fts.tv_nsec,imgpath)) {
+
+                if (!readjpeg(imgpath,raw->m39.time,&raw->img,0)) {
+                    trace(2,"read jpg image fail: time=%sl\n",time_str(raw->m39.time,4));
+                    return 0;
+                }
+            }
+            else {
+                trace(2,"no such file: time=%s\n",
+                      time_str(raw->m39.time,4)); return 0;
+            }
+        }
+#endif
         return 11; 
     }
     else return 0; /* fail */

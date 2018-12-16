@@ -174,6 +174,7 @@ static void updateobs(rtksvr_t *svr,obs_t *obs,int index,int iobs)
         sortobs(&svr->obs[index][iobs]);
     }
     svr->nmsg[index][0]++;
+    return;
 }
 /* update ephemeris-----------------------------------------------------------*/
 static void updateeph(rtksvr_t *svr,nav_t *nav,int sat,int index)
@@ -215,6 +216,7 @@ static void updateeph(rtksvr_t *svr,nav_t *nav,int sat,int index)
         }
         svr->nmsg[index][6]++;
     }
+    return;
 }
 /* update sbas message data---------------------------------------------------*/
 static void updatesbas(rtksvr_t *svr, sbsmsg_t *sbsmsg, int index)
@@ -234,6 +236,7 @@ static void updatesbas(rtksvr_t *svr, sbsmsg_t *sbsmsg, int index)
         sbsupdatecorr(sbsmsg,&svr->nav);
     }
     svr->nmsg[index][3]++;
+    return;
 }
 /* update ion/utc parameters--------------------------------------------------*/
 static void updateionutc(rtksvr_t *svr, nav_t *nav,int index)
@@ -250,6 +253,7 @@ static void updateionutc(rtksvr_t *svr, nav_t *nav,int index)
         svr->nav.leaps=nav->leaps;
     }
     svr->nmsg[index][2]++;
+    return;
 }
 /* update antenna postion parameters------------------------------------------*/
 static void updateant(rtksvr_t *svr,int index)
@@ -300,6 +304,7 @@ static void updateant(rtksvr_t *svr,int index)
         }
     }
     svr->nmsg[index][4]++;
+    return;
 }
 /* update dgps correction data------------------------------------------------*/
 static void updatedgps(rtksvr_t *svr,int index)
@@ -340,6 +345,7 @@ static void updatessr(rtksvr_t *svr,int index)
         svr->nav.ssr[i]=svr->rtcm[index].ssr[i];
     }
     svr->nmsg[index][7]++;
+    return;
 }
 /* update lex message---------------------------------------------------------*/
 static void updatelex(rtksvr_t *svr,int index)
@@ -348,6 +354,7 @@ static void updatelex(rtksvr_t *svr,int index)
     gtime_t tof;
     lexupdatecorr(&svr->raw[index].lexmsg,&svr->nav,&tof);
     svr->nmsg[index][8]++;
+    return;
 }
 /* update error message-------------------------------------------------------*/
 static void updateerror(rtksvr_t *svr,int index)
@@ -365,6 +372,7 @@ static void updateimu(rtksvr_t *svr, const imud_t *imu, int iimu)
     if (time2gpst(imu->time,&week)>0.0&&week==0) {
         svr->imu[iimu].time=timeadd(imu->time,svr->week*604800.0);
     }
+    return;
 }
 /* update PVT solutions data--------------------------------------------------*/
 static void updatepvt(rtksvr_t *svr, const sol_t *sol ,int isol)
@@ -378,11 +386,24 @@ static void updatepvt(rtksvr_t *svr, const sol_t *sol ,int isol)
         &&isol>=1) return;
 
     svr->pvt[isol]=*sol;
+    return;
 }
 /* update image raw data------------------------------------------------------*/
 static void updateimg(rtksvr_t *svr, const img_t *img ,int iimg)
 {
     trace(3,"updateimg:\n");
+
+    if (iimg>=MAXIMGBUF) return;
+    if (fabs(timediff(svr->img[iimg-1].time,img->time))<DTTOL
+        &&iimg>=1) return;
+
+    svr->img[iimg].id  =img->id;
+    svr->img[iimg].time=img->time;
+    svr->img[iimg].h=img->h;
+    svr->img[iimg].w=img->w;
+
+    memcpy(svr->img[iimg].data,img->data,sizeof(unsigned char)*img->w*img->h);
+    return;
 }
 /* update pose measurement data-----------------------------------------------*/
 static void updatepose(rtksvr_t *svr,const pose_meas_t *pose,int ipose)
@@ -394,6 +415,7 @@ static void updatepose(rtksvr_t *svr,const pose_meas_t *pose,int ipose)
         return;
     }
     svr->pose[ipose]=*pose;
+    return;
 }
 /* solution convert to gnss measurement data----------------------------------*/
 static void sol2gnss(const sol_t *sol,gmea_t *gnss)
@@ -411,6 +433,7 @@ static void sol2gnss(const sol_t *sol,gmea_t *gnss)
         gnss->std[i+0]=SQRT(sol->qr[i]);
         gnss->std[i+3]=SQRT(sol->qv[i]);
     }
+    return;
 }
 /* input rover and base observation data--------------------------------------*/
 static int inputobs(rtksvr_t *svr,obsd_t *obs)
@@ -569,6 +592,31 @@ static int inputpvt(rtksvr_t *svr,gtime_t t0,sol_t *sol)
             return 1; /* ok */
         }
     }
+    return 0; /* fail */
+}
+/* input image raw data-------------------------------------------------------*/
+static int inputimg(rtksvr_t *svr,gtime_t t0,img_t **img)
+{
+    trace(3,"inputimg:\n");
+    int i,j,n; double dt;
+
+    /* search image raw data by t0 */
+    for (i=0,dt=0.0,n=NS(svr->syn.img,svr->syn.nm,MAXIMGBUF);
+         i<n+1&&svr->syn.nm;i++) {
+        j=svr->syn.img+i;
+
+        if (j>=MAXIMGBUF) j=j%MAXIMGBUF;
+        if (dt&&fabs(dt)<fabs(timediff(t0,svr->img[j].time))) {
+            break;
+        }
+        if (fabs((dt=timediff(t0,svr->img[j].time)))<DTTOL
+            &&svr->img[j].h&&svr->img[j].w&&svr->img[j].time.time!=0) {
+
+            *img=&svr->img[j];
+            svr->syn.img=j; return 1; /* ok */
+        }
+    }
+    *img=NULL;
     return 0; /* fail */
 }
 /* input pose measurement data------------------------------------------------*/
@@ -919,6 +967,7 @@ static void outrslt(rtksvr_t *svr,gmea_t *gm,int tick,int index)
         ins->gstat=SOLQ_NONE;
     }
     writesol(svr,index); /* write solution */
+    return;
 }
 /* update time difference between input stream--------------------------------*/
 static void updatetimediff(rtksvr_t *svr)
@@ -953,7 +1002,7 @@ static void updatetimediff(rtksvr_t *svr)
         if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
             if (syn->np&&syn->ni) {
                 syn->dt[2]=time2gpst(syn->time[5],NULL)-
-                           time2gpst(syn->time[2],NULL);
+                        time2gpst(syn->time[2],NULL);
             }
         }
     }
@@ -968,6 +1017,21 @@ static void updatetimediff(rtksvr_t *svr)
         if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
             if (syn->np&&syn->ni) {
                 syn->dt[2]=time2gpst(syn->time[5],NULL)-time2gpst(syn->time[2],NULL);
+            }
+        }
+    }
+    /* ins/gnss-lc/vo tightly coupled position mode */
+    if (svr->rtk.opt.mode==PMODE_INS_LGNSS_VO) {
+        if (syn->ni&&syn->nm) {
+            syn->dt[0]=time2gpst(syn->time[2],NULL)-time2gpst(syn->time[4],NULL);
+        }
+        if (syn->ni&&syn->ns) {
+            syn->dt[1]=time2gpst(syn->time[2],NULL)-time2gpst(syn->time[3],NULL);
+        }
+        if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
+            if (syn->np&&syn->ni) {
+                syn->dt[2]=time2gpst(syn->time[5],NULL)-
+                        time2gpst(syn->time[2],NULL);
             }
         }
     }
@@ -1018,6 +1082,21 @@ static int suspend(rtksvr_t *svr,int index)
                     if (d*syn->dt[1]> dT) return 1; break;
             case 0: if (d*syn->dt[0]<-dT) return 1; break;
             case 1: if (d*syn->dt[1]<-dT) return 1; break;
+        }
+        if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
+            switch (index) {
+                case 4: if (d*syn->dt[2]<-dT) return 1; break;
+                case 6: if (d*syn->dt[2]> dT) return 1; break;
+            }
+        }
+    }
+    /* ins/gnss-lc/vo tightly coupled position mode */
+    if (svr->rtk.opt.mode==PMODE_INS_LGNSS_VO) {
+        switch (index) {
+            case 4: if (d*syn->dt[0]> dT) return 1;
+                    if (d*syn->dt[1]> dT) return 1; break;
+            case 5: if (d*syn->dt[0]<-dT) return 1; break;
+            case 3: if (d*syn->dt[1]<-dT) return 1; break;
         }
         if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
             switch (index) {
@@ -1132,7 +1211,43 @@ static int imuobsalign(rtksvr_t *svr)
 /* time alignment for imu and image measurement data-------------------------*/
 static int imuimgalign(rtksvr_t *svr)
 {
-    
+
+    int i,j,k; double sow1,sow2,sow3;
+    syn_t *syn=&svr->syn;
+
+    trace(3,"imuimgalign:\n");
+
+    for (i=0;i<(syn->of[4]?MAXIMGBUF:syn->nm)&&!syn->tali[3];i++) {
+
+        sow1=time2gpst(svr->img[i].time,NULL);
+        for (j=0;j<(syn->of[2]?MAXIMUBUF:syn->ni);j++) {
+
+            sow2=time2gpst(svr->imu[j].time,NULL);
+            if (sow1==0.0||sow2==0.0||fabs(sow1-sow2)>DTTOL) continue;
+
+            trace(3,"imu and image time align ok\n");
+            syn->imu=j;
+            syn->img=i;
+            syn->tali[4]=1;
+            break;
+        }
+        for (k=0;(syn->of[4]?MAXIMGBUF:syn->ns)&&syn->tali[4];k++) {
+
+            sow3=time2gpst(svr->imu[j].time,NULL);
+            if (sow2==0.0||sow3==0.0||fabs(sow3-sow2)>DTTOL) continue;
+
+            trace(3,"imu and solution time align ok\n");
+            syn->pvt=k;
+            syn->tali[4]=2;
+            break;
+        }
+        if (syn->tali[4]==2) {
+            tracet(3,"imu and solution/image align ok\n");
+            return 1;
+        }
+        else syn->tali[4]=0; /* fail */
+    }
+    return 0;
 }
 /* time alignment for measurement data---------------------------------------*/
 static int timealign(rtksvr_t *svr)
@@ -1144,6 +1259,9 @@ static int timealign(rtksvr_t *svr)
         if (svr->rtk.opt.insopt.lcopt==IGCOM_USESOL) return solimualign(svr);
     }
     if (svr->rtk.opt.mode==PMODE_INS_TGNSS) return imuobsalign(svr);
+    if (svr->rtk.opt.mode==PMODE_INS_LGNSS_VO) {
+        return imuimgalign(svr);
+    }
     return 0;
 }
 /* motion constraint for ins states update-----------------------------------*/
@@ -1176,6 +1294,7 @@ static void motion(const insopt_t *opt,imud_t *imuz,insstate_t *ins,
         /* zero angular rate update */
         if (zf&&opt->zaru) zaru(ins,opt,imuz,1);
     }
+    return;
 }
 /* rtk server thread --------------------------------------------------------*/
 #ifdef WIN32
@@ -1204,10 +1323,11 @@ static void *rtksvrthread(void *arg)
     unsigned char *p,*q;
     char msg[128];
 
-    /*
+    /* @fobs-----------------------------------------------------------
      * fobs[0]: rov, fobs[1]:  base, fobs[2]: corr, fobs[3]: solution,
      * fobs[4]: imu, fobs[5]: image, fobs[6]: pose
-     * */
+     * --------------------------------------------------------------*/
+    
     tracet(3,"rtksvrthread:\n");
 
     svr->state=1;
@@ -1231,6 +1351,11 @@ static void *rtksvrthread(void *arg)
         if (svr->pause ) continue;
         if (svr->reinit) init=0;
 
+        /* @index  index of input stream---------------------------------
+         * index=0: rover,    index=1: base, index=2: corr
+         * index=3: solution, index=4: imu
+         * index=5: image,    index=6: pose
+         * ------------------------------------------------------------*/
         for (i=0;i<7;i++) {
             p=svr->buff[i]+svr->nb[i]; q=svr->buff[i]+svr->buffsize;
 
@@ -1370,7 +1495,7 @@ static void *rtksvrthread(void *arg)
                     tracet(3,"ins initial ok\n");
                 }
                 if (!init) {
-                    tracet(2,"ins still initialing\n");
+                    tracet(2,"ins initialing\n");
                     continue;
                 }
             }
@@ -1387,7 +1512,9 @@ static void *rtksvrthread(void *arg)
             }
             /* camera visual odometry aid */
             if (iopt->usecam) {
-                /* todo: add functions of visual odometry aid */
+
+                /* coupled with vo */
+                voigpos(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt)); 
             }
             /* dual ant. or camera pose aid */
             if (iopt->pose_aid) {
@@ -1565,8 +1692,10 @@ extern int carvigsvrinit(rtksvr_t *svr)
     svr->nav.ns=NSATSBS*2;
     for (i=0;i<2;i++) for (j=0;j<7;j++) svr->nav.sind[i][j]=sig0;
     for (i=0;i<MAXIMGBUF;i++) {
-        svr->img[i].h=svr->img[i].w=0;
-        svr->img[i].data=NULL;
+        initimg(&svr->img[i],svr->rtk.opt.insopt.voopt.match.img_w,svr->rtk.opt.insopt.voopt.match.img_h,time0);
+    }
+    for (i=0;i<7;i++) {
+        initimg(&svr->raw[i].img,svr->rtk.opt.insopt.voopt.match.img_w,svr->rtk.opt.insopt.voopt.match.img_h,time0);
     }
     for (i=0;i<3;i++) for (j=0;j<MAXOBSBUF;j++) {
         if (!(svr->obs[i][j].data=(obsd_t *)malloc(sizeof(obsd_t)*MAXOBS))) {
@@ -1607,6 +1736,9 @@ extern void carvigsvrfree(rtksvr_t *svr)
     for (i=0;i<MAXIMGBUF;i++) {
         if (svr->img[i].data) free(svr->img[i].data);
     }
+    for (i=0;i<7;i++) {
+        freeimg(&svr->raw[i].img);
+    }
     rtkfree(&svr->rtk);
 }
 /* lock/unlock rtk server ------------------------------------------------------
@@ -1620,25 +1752,34 @@ extern void rtksvrunlock(rtksvr_t *svr) {unlock(&svr->lock);}
 * start rtk server thread
 * args   : rtksvr_t *svr    IO rtk server
 *          int     cycle    I  server cycle (ms)
-*          int     buffsize I  input buffer size (bytes)
+*          int     buffsize I  input buffer size (bytes)   
 *          int     *strs    I  stream types (STR_???)
 *                              types[0]=input stream rover
 *                              types[1]=input stream base station
 *                              types[2]=input stream correction
-*                              types[3]=input stream imu
-*                              types[4]=input stream solution
-*                              types[4]=output stream solution 1
-*                              types[5]=output stream solution 2
-*                              types[6]=log stream rover
-*                              types[7]=log stream base station
-*                              types[8]=log stream correction
+*                              types[3]=input stream gnss solution
+*                              types[4]=input stream imu
+*                              types[5]=input stream image
+*                              types[6]=input stream pose
+*                              types[7]=output stream solution 1
+*                              types[8]=output stream solution 2
+*                              types[9]=log stream rover
+*                              types[10]=log stream base station
+*                              types[11]=log stream correction
 *          char    **paths  I  input stream paths
 *          int     *format  I  input stream formats (STRFMT_???)
-*                              format[0]=input stream rover
-*                              format[1]=input stream base station
-*                              format[2]=input stream correction
-*                              format[3]=input stream imu
-*                              format[4]=input stream solution
+*                              formats[0]=input stream rover
+*                              formats[1]=input stream base station
+*                              formats[2]=input stream correction
+*                              formats[3]=input stream gnss solution
+*                              formats[4]=input stream imu
+*                              formats[5]=input stream image
+*                              formats[6]=input stream pose
+*                              formats[7]=output stream solution 1
+*                              formats[8]=output stream solution 2
+*                              formats[9]=log stream rover
+*                              formats[10]=log stream base station
+*                              formats[11]=log stream correction
 *          int     navsel   I  navigation message select
 *                              (0:rover,1:base,2:ephem,3:all)
 *          char    **cmds   I  input stream start commands
@@ -1786,7 +1927,7 @@ extern int carvigsvrstart(rtksvr_t *svr, int cycle, int buffsize, int *strs,
     strsync(svr->stream,svr->stream+2);
     strsync(svr->stream,svr->stream+3);
     strsync(svr->stream,svr->stream+4);
-    
+
     /* write start commands to input streams */
     for (i=0;i<7;i++) {
         if (!cmds[i]) continue;
@@ -2018,3 +2159,4 @@ extern int carvigsvrmark(rtksvr_t *svr, const char *name, const char *comment)
     rtksvrunlock(svr);
     return 1;
 }
+

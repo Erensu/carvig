@@ -1151,6 +1151,7 @@ static int updatefeatmeas(const insopt_t *opt,insstate_t *ins,gtime_t time)
         for (j=0;j<ki;j++) {
             hashtable_remove(vofilt.data[index[i]].trackfeat,tracks.data[i].name);
         }
+        tracks.data[i].last_idx=-1;
         if (flag==0) continue;
 
         /* ekf filter */

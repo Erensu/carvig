@@ -394,8 +394,8 @@ extern "C"{
 #define PMODE_INS_UPDATE 9              /* positioning mode: ins mechanization */
 #define PMODE_INS_LGNSS  10             /* positioning mode: ins/gnss loosely coupled */
 #define PMODE_INS_TGNSS  11             /* positioning mode: ins/gnss tightly coupled */
-#define PMODE_INS_LVO    12             /* positioning mode: ins/vo loosely coupled */
-#define PMODE_VO         13             /* positioning mode: visual odometry */
+#define PMODE_INS_LGNSS_VO  12          /* positioning mode: ins/gnss-lc/vo coupled */
+#define PMODE_INS_TGNSS_VO  13          /* positioning mode: ins/gnss-tc/vo coupled */
 
 #define CAM_PINHOLE      0              /* camera model: pinhole */
 #define DISTORT_RT       0              /* distortion model: radial-tangential */
@@ -754,7 +754,13 @@ typedef struct trackd {         /* feature points track record */
     int n,nmax;                 /* number and max number of feature points */
     int last_idx,first_frame,last_frame;
                                 /* last feature point index/first frame index/last frame index of this track */
-    unsigned char flag;         /* 0: update,1: new track,2: track lost,3: bad track,4: used to filter */
+    unsigned char flag;         /*
+                                 * 0: updated track,
+                                 * 1: new track,
+                                 * 2: track lost,
+                                 * 3: bad track,
+                                 * 4: have used to filter
+                                 * */
     long int uid;               /* a unique identifier of this track */
     char name[16];              /* name of track (equals to feature point's name) */
     struct feature *data;       /* track feature data */
@@ -1006,19 +1012,8 @@ typedef struct {            /* PSD for ins-gnss loosely coupled ekf states */
     double accl;            /* accelerometer noise PSD (m^2 s^-3) */
     double ba;              /* accelerometer bias random walk PSD (m^2 s^-5) */
     double bg;              /* gyro bias random walk PSD (rad^2 s^-3) */
-    double dt;              /* time synchronization error noise PSD */
-    double sg;              /* residual scale factors of gyroscopes noise PSD */
-    double sa;              /* residual scale factors of accl noise PSD */
-    double ra;              /* non-orthogonal between sensor axes for accl noise PSD */
-    double rg;              /* non-orthogonal between sensor axes for gyro noise PSD */
-    double lever,mla;       /* lever arm for body to ant. noise PSD */
-    double os;              /* odometry scale factor noise PSD */
-    double ol;              /* odometry lever arm noise PSD */
-    double oa;              /* odometry misalignment noise PSD */
     double clk;             /* receiver clock phase-drift PSD (m^2/s) */
     double clkr;            /* receiver clock drift PSD */
-    double cma;             /* misalignment from camera to b-frame noise PSD */
-    double vma;             /* misalignment from v-frame to b-frame noise PSD */
 } psd_t;
 
 typedef struct {            /* initial uncertainty for ins-gnss loosely coupled */
@@ -1862,6 +1857,7 @@ typedef struct {              /* file options type */
     char trace  [MAXSTRPATH]; /* debug trace file */
     char gtfile [MAXSTRPATH]; /* ground truth file */
     char magfile[MAXSTRPATH]; /* geomagnetic field model coefficients */
+    
 } filopt_t;
 
 typedef struct {        /* RINEX options type */
@@ -2194,7 +2190,7 @@ typedef struct {         /* time synchronization index in buffer */
     int nm,nmp,img;      /* current/precious number and sync index of image raw data */
     int np,npp,pose;     /* current/precious number and sync index of pose measurement */
     int of[6];           /* overflow flag (rover,base,imu,pvt,image,pose) */
-    unsigned int tali[6];/* time alignment for data (rover-base,pvt-imu,rover-base-imu,imu-image,pose-imu) */
+    unsigned int tali[6];/* time alignment for data (rover-base,pvt-imu,rover-base-imu,imu-image-pvt,pose-imu) */
     unsigned int ws;     /* search window size */
     double dt[6];        /* time difference between input streams */
     gtime_t time[6];     /* current time of rover,base,imu,pvt,image and pose measurement */
@@ -3194,6 +3190,7 @@ EXPORT void savejpg(const char* filename, uchar* body, int h, int w, int ch,
                     int quality);
 EXPORT int loadjpg(const char* filename, uchar* &body, int &h, int &w,
                    int &ch);
+EXPORT int readjpeg(const char *imgfile,gtime_t time,img_t *img,int flag);
 
 /* klt track-----------------------------------------------------------------*/
 EXPORT void initklt();
@@ -3244,6 +3241,9 @@ EXPORT int kalibrrosbag(const char *datfile,const char *imufile,
                         const char *imgdir,
                         const char *output);
 
+EXPORT void updcamposevar(const insopt_t *opt,const double *var,vostate_t *vo);
+EXPORT void initcamposevar(const insopt_t *opt,insstate_t *ins,vostate_t *vo);
+
 /* ins-gnss-vo coupled post-processing----------------------------------------*/
 EXPORT int igvopostpos(const gtime_t ts, gtime_t te, double ti, double tu,
                        const prcopt_t *popt, const solopt_t *sopt,
@@ -3271,6 +3271,7 @@ EXPORT void rtksvrlock  (rtksvr_t *svr);
 EXPORT void rtksvrunlock(rtksvr_t *svr);
 EXPORT int carvigsvrinit(rtksvr_t *svr);
 EXPORT void carvigsvrfree(rtksvr_t *svr);
+EXPORT void carvigsvrsetimgpath(const char *dirpath);
 
 /* virtual console functions--------------------------------------------------*/
 EXPORT vt_t *vt_open(int sock, const char *dev);
@@ -3283,6 +3284,9 @@ EXPORT int vt_printf(vt_t *vt, const char *format, ...);
 EXPORT int vt_chkbrk(vt_t *vt);
 EXPORT int vt_openlog(vt_t *vt, const char *file);
 EXPORT void vt_closelog(vt_t *vt);
+
+/* interface for opencv library-----------------------------------------------*/
+EXPORT void dipsplyimg(const img_t *img);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* rtkrcv.cc : rtk-gps/gnss receiver console app
+* igvonav.cc : rtk-gps/gnss/vo receiver console app
 *
 * notes   :
 *     current version does not support win32 without pthread library
@@ -238,7 +238,7 @@ static opt_t rcvopts[]={
  * inpstr3-path:  correction data file path
  * inpstr4-path:  gnss position measurement data file path
  * inpstr5-path:  imu measurement raw data file path
- * inpstr6-path:  reserve
+ * inpstr6-path:  image measurement data
  * inpstr7-path:  dual-ants measurement data path
  * ---------------------------------------------------------------------------*/
 
@@ -785,7 +785,7 @@ static void cmd_save(char **args, int narg, vt_t *vt)
     }
     if (!confwrite(vt,file)) return;
     time2str(utc2gpst(timeget()),s,0);
-    sprintf(comment,"%s options (%s, v.%s %s)",PRGNAME,s,VER_RTKLIB,PATCH_LEVEL);
+    sprintf(comment,"%s options (%s, v.%s %s)",PRGNAME,s,"1.0.0",PATCH_LEVEL);
     setsysopts(&prcopt,solopt,&filopt);
     if (!saveopts(file,"w",comment,rcvopts)||!saveopts(file,"a",NULL,sysopts)) {
         vt_printf(vt,"options save error: %s\n",file);
@@ -1164,7 +1164,7 @@ int main(int argc, char **argv)
         tracelevel(trace);
     }
     /* initialize rtk server and monitor port */
-    rtksvrinit(&svr);
+    carvigsvrinit(&svr);
     strinit(&moni);
 
     /* initialize ground truth monitor port */

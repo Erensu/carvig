@@ -196,5 +196,91 @@ extern int loadjpg(const char* filename, uchar* &body, int &h, int &w, int &ch)
      * warnings occurred (test whether jerr.pub.num_warnings is nonzero).
      */
     /* And we're done! */
-    return 0;
+    return 1;
+}
+/* RGB convert to GRAY level-------------------------------------------------*/
+static int rgb2gray(unsigned char r,unsigned char g,unsigned char b)
+{
+    return (int)(r*0.114+g*0.587+b*0.299);
+}
+/* read jpeg-format image raw data from given image file path----------------
+ * args  : char *imgfile  I   image file path
+ *         gtime_t time   I   image observation time
+ *         img_t *img     IO  image raw data
+ *         int flag       I   0: left,1: right
+ * return: 1:ok, 0:fail
+ * --------------------------------------------------------------------------*/
+extern int readjpeg(const char *imgfile,gtime_t time,img_t *img,int flag)
+{
+    trace(3,"readjpeg: path=%s\n",imgfile);
+
+    img->time=time;
+
+    struct jpeg_decompress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+    FILE *input_file;
+    JSAMPARRAY buffer;
+    int row_width,i;
+    unsigned char *tmp=NULL;
+
+    cinfo.err=jpeg_std_error(&jerr);
+
+    if ((input_file=fopen(imgfile,"rb"))==NULL) {
+        fprintf(stderr,"can't open %s\n",imgfile);
+        return 0;
+    }
+    /* initialization of jpeg compression objects */
+    jpeg_create_decompress(&cinfo);
+
+    /* specify data source for decompression */
+    jpeg_stdio_src(&cinfo,input_file);
+
+    /* read file header, set default decompression parameters */
+    jpeg_read_header(&cinfo,TRUE);
+
+    /* start decompressor */
+    jpeg_start_decompress(&cinfo);
+
+    /* save image informations */
+    img->w=cinfo.output_width;
+    img->h=cinfo.output_height;
+    img->id++;
+
+    row_width=cinfo.output_width*cinfo.output_components;
+
+    /* image raw data buffer */
+    buffer=(*cinfo.mem->alloc_sarray)((j_common_ptr)&cinfo,JPOOL_IMAGE,row_width,1);
+
+    if (flag==0) { /* left */
+        img->data=(unsigned char*)malloc(row_width*cinfo.output_height);
+        memset(img->data,0,row_width*cinfo.output_height);
+        tmp=img->data;
+    }
+    else if (flag==1) { /* right */
+        img->data=(unsigned char*)malloc(row_width*cinfo.output_height);
+        memset(img->data,0,row_width*cinfo.output_height);
+        tmp=img->data;
+    }
+    /* read image raw data */
+    while (cinfo.output_scanline<cinfo.output_height) {
+        jpeg_read_scanlines(&cinfo,buffer,1);
+        if (cinfo.output_components==3) {
+            for (i=0;i<cinfo.output_width;i++) {
+                tmp[i]=rgb2gray((*buffer)[3*i],(*buffer)[3*i+1],(*buffer)[3*i+2]);
+            }
+            tmp+=cinfo.output_width;
+        }
+        else {
+            memcpy(tmp,*buffer,row_width);
+            tmp+=row_width;
+        }
+    }
+#if 0
+    /* show image for debug */
+    dipsplyimg(img);
+#endif
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    fclose(input_file);
+    return 1;
 }

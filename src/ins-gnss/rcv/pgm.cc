@@ -150,9 +150,9 @@ extern unsigned char* pgmReadFile(char *fname,unsigned char *img,
     FILE *fp;
 
     /* Open file */
-    if ((fp=fopen(fname,"rb"))==NULL)
+    if ((fp=fopen(fname,"rb"))==NULL) {
         trace(2,"Can't open file named '%s' for reading\n",fname);
-
+    }
     /* Read file */
     ptr=pgmRead(fp,img,ncols,nrows);
 

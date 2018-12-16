@@ -73,4 +73,49 @@ extern void drawtrack(const track_t *track,const voopt_t *opt)
         }
     }
 }
+/* image buffer convert to Image struct--------------------------------------
+ * args  :  img_t *img  I  image gray level measurement data
+ *          Image **Img O  image rgb format measurement data
+ * return: none
+ * --------------------------------------------------------------------------*/
+static int img2Imgcv(const img_t *img,IplImage **Img)
+{
+    int step,i,j; uchar* pimg=NULL;
+    CvSize s0={0};
+
+    trace(3,"img2Img:\n");
+
+    if (img==NULL||Img==NULL) {
+        return 0;
+    }
+    s0.width=img->w; s0.height=img->h;
+    *Img=cvCreateImage(s0,8,3);
+    step=(*Img)->widthStep/sizeof(uchar);
+
+    pimg=(uchar *)(*Img)->imageData;
+
+    for (i=0;i<(*Img)->height;i++) {
+
+        for (j=0;j<(*Img)->width;j++) {
+            pimg[i*step+3*j+0]=img->data[i*img->w+j];
+            pimg[i*step+3*j+1]=img->data[i*img->w+j];
+            pimg[i*step+3*j+2]=img->data[i*img->w+j];
+        }
+    }
+    return 1;
+}
+/* display image-------------------------------------------------------------*/
+extern void dipsplyimg(const img_t *img)
+{
+    if (img==NULL) return;
+    IplImage *Img=NULL;
+
+    if (!img2Imgcv(img,&Img)) {
+        trace(2,"image data invalid\n");
+        return;
+    }
+    IplImage *pImage=Img;
+    cvShowImage("Image Display",pImage);
+    cvWaitKey(1);
+}
 

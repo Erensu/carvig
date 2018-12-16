@@ -37,7 +37,7 @@ static char snrmask_[NFREQ][1024];
 
 /* system options table ------------------------------------------------------*/
 #define SWTOPT  "0:off,1:on"
-#define MODOPT  "0:single,1:dgps,2:kinematic,3:static,4:movingbase,5:fixed,6:ppp-kine,7:ppp-static,8:ppp-fixed,9:ins-update,10:ins-loosely-coupled,11:ins-tightly-coupled"
+#define MODOPT  "0:single,1:dgps,2:kinematic,3:static,4:movingbase,5:fixed,6:ppp-kine,7:ppp-static,8:ppp-fixed,9:ins-update,10:ins-loosely-coupled,11:ins-tightly-coupled,12:ins-gnsslc-vo-coupled"
 #define FRQOPT  "1:l1,2:l1+l2,3:l1+l2+l5,4:l1+l5"
 #define TYPOPT  "0:forward,1:backward,2:combined,3:RTS"
 #define IONOPT  "0:off,1:brdc,2:sbas,3:dual-freq,4:est-stec,5:ionex-tec,6:qzs-brdc,7:qzs-lex,8:stec"
@@ -57,8 +57,6 @@ static char snrmask_[NFREQ][1024];
 #define POSOPT  "0:llh,1:xyz,2:single,3:posfile,4:rinexhead,5:rtcm,6:raw"
 #define TIDEOPT "0:off,1:on,2:otl"
 #define PHWOPT  "0:off,1:on,2:precise"
-#define CAMOPT  "0:pinhole"
-#define DISOPT  "0:radial-tangential"
 
 EXPORT opt_t sysopts[]={
     {"pos1-posmode",    3,  (void *)&prcopt_.mode,       MODOPT },
@@ -280,18 +278,8 @@ EXPORT opt_t insopts[]={
     {"ins-psd_accl",    1, (void *)&prcopt_.insopt.psd.accl, "" },
     {"ins-psd_ba",      1, (void *)&prcopt_.insopt.psd.ba,   "" },
     {"ins-psd_bg",      1, (void *)&prcopt_.insopt.psd.bg,   "" },
-    {"ins-psd_dt",      1, (void *)&prcopt_.insopt.psd.dt,   "" },
-    {"ins-psd_sg",      1, (void *)&prcopt_.insopt.psd.sg,   "" },
-    {"ins-psd_sa",      1, (void *)&prcopt_.insopt.psd.sa,   "" },
-    {"ins-psd_ra",      1, (void *)&prcopt_.insopt.psd.ra,   "" },
-    {"ins-psd_rg",      1, (void *)&prcopt_.insopt.psd.rg,   "" },
-    {"ins-psd_os",      1, (void *)&prcopt_.insopt.psd.os,   "" },
-    {"ins-psd_oa",      1, (void *)&prcopt_.insopt.psd.oa,   "" },
-    {"ins-psd-ol",      1, (void *)&prcopt_.insopt.psd.ol,   "" },
     {"ins-psd_clk",     1, (void *)&prcopt_.insopt.psd.clk,  "" },
     {"ins-psd_clkr",    1, (void *)&prcopt_.insopt.psd.clkr, "" },
-    {"ins-psd_cma",     1, (void *)&prcopt_.insopt.psd.cma, "" },
-    {"ins-psd_vma",     1, (void *)&prcopt_.insopt.psd.vma, "" },
 
     {"ins-zv_mt",         1, (void *)&prcopt_.insopt.zvopt.mt,          "" },
     {"ins-zv_ws",         0, (void *)&prcopt_.insopt.zvopt.ws,          "" },
@@ -335,6 +323,11 @@ EXPORT opt_t insopts[]={
     {"ins-vo-aid-bucket-w",     1, (void *)&prcopt_.insopt.voopt.match.bucket.w,    "" },
     {"ins-vo-aid-bucket-h",     1, (void *)&prcopt_.insopt.voopt.match.bucket.h,    "" },
     {"ins-vo-aid-bucket-nmax",  0, (void *)&prcopt_.insopt.voopt.match.bucket.nmax, "" },
+
+    {"ins-vo-aid-k1",1,(void*)&prcopt_.insopt.voopt.cam.k1,},
+    {"ins-vo-aid-k2",1,(void*)&prcopt_.insopt.voopt.cam.k2,},
+    {"ins-vo-aid-p1",1,(void*)&prcopt_.insopt.voopt.cam.p1,},
+    {"ins-vo-aid-p2",1,(void*)&prcopt_.insopt.voopt.cam.p2,},
 
     {"",0,NULL,""}
 };

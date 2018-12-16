@@ -119,19 +119,8 @@ static void getQ(const insopt_t *opt,double dt,double* Q)
     sysQ(IV,NV,nx,opt->psd.accl,dt,Q);
     sysQ(iba,nba,nx,opt->psd.ba,dt,Q);
     sysQ(ibg,nbg,nx,opt->psd.bg,dt,Q);
-    sysQ(idt,ndt,nx,opt->psd.dt,dt,Q);
-    sysQ(isg,nsg,nx,opt->psd.sg,dt,Q);
-    sysQ(isa,nsa,nx,opt->psd.sa,dt,Q);
-    sysQ(irg,nrg,nx,opt->psd.rg,dt,Q);
-    sysQ(ira,nra,nx,opt->psd.ra,dt,Q);
-    sysQ(ila,nla,nx,opt->psd.lever,dt,Q);
-    sysQ(iso,nos,nx,opt->psd.os,dt,Q);
-    sysQ(iol,nol,nx,opt->psd.ol,dt,Q);
-    sysQ(ioa,noa,nx,opt->psd.oa,dt,Q);
     sysQ(irc,nrc,nx,opt->psd.clk ,dt,Q);
     sysQ(irr,nrr,nx,opt->psd.clkr,dt,Q);
-    sysQ(icm,ncm,nx,opt->psd.cma ,dt,Q);
-    sysQ(ivm,nvm,nx,opt->psd.vma ,dt,Q);
 }
 /* process noise gain matrix-------------------------------------------------*/
 static void getGn(const insopt_t *opt,const insstate_t *ins,const double dt,
