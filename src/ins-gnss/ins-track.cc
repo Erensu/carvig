@@ -34,7 +34,6 @@ static long int id_seed=1;        /* generate a new feature id */
 extern int inittrack(trackd_t *data,const voopt_t *opt)
 {
     gtime_t t0={0};
-    trace(3,"inittrack:\n");
 
     data->ts=data->te=t0;
     data->n=data->nmax=0; data->uid=id_seed++; sprintf(data->name,"%ld",data->uid);
@@ -110,11 +109,25 @@ static int addnewtrack(track_t *track,const trackd_t *data)
     track->data[track->n++]=*data;
     return 1;
 }
+/* replace index of lost track feature----------------------------------------*/
+static int indexofrptrack(track_t *track)
+{
+    int i;
+    for (i=0;i<track->n;i++) {
+        if (track->data[i].last_idx==-1) return i;
+    }
+    return -1;
+}
 /* create a new track---------------------------------------------------------*/
 static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame,
                     const voopt_t *opt,track_t *track,
                     const img_t *pimg,const img_t *cimg)
 {
+    int index;
+
+    /* find index of lost track feature */
+    if ((index=indexofrptrack(track))>=0) return index;
+
     /* new track. */
     feature fp,fc; trackd_t ntrack;
 

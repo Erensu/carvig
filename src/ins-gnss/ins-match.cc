@@ -13,7 +13,6 @@
 #include <emmintrin.h>
 #include <pmmintrin.h>
 #include <triangle.h>
-#include <include/carvig.h>
 
 /* constants ----------------------------------------------------------------*/
 #define add_data_func_delc(data_type,add_data_type)            \
@@ -37,6 +36,7 @@
     }                                                          \
 
 #define TRACR_FEAT_POINTS    1       /* output feature points for debugs */
+#define MATCH_RATIO          3.0     /* ratio of min-cost to second-min-cost */
 
 /* type definitions ----------------------------------------------------------*/
 typedef struct maximum {             /* structure for storing interest points */
@@ -166,11 +166,11 @@ static int find_match(int32_t* m1,const int i1,int32_t* m2,
                       const int step,ivec_t *k2,
                       const int u_bin_num, const int v_bin_num, const int stat_bin,
                       int *min_ind,int stage,bool use_prior,
-                      const matchopt_t *opt)
+                      const matchopt_t *opt,int *flag)
 {
     /* init and load image coordinates + feature */
     *min_ind        =0;
-    double  min_cost=10000000;
+    double  min_cost=1E9,scdmin_cost=1E9;
     int32_t u1      =*(m1+step*i1+0);
     int32_t v1      =*(m1+step*i1+1);
     int32_t c       =*(m1+step*i1+3);
@@ -221,12 +221,16 @@ static int find_match(int32_t* m1,const int i1,int32_t* m2,
                     cost=_mm_extract_epi16(xmm4,0)+_mm_extract_epi16(xmm4,4);
 
                     if (cost<min_cost) {
-                        *min_ind=k2[k2_ind].data[i]; min_cost=cost;
+                        *min_ind=k2[k2_ind].data[i];
+                        scdmin_cost=min_cost; min_cost=cost;
                     }
                 }
             }
         }
     }
+    /* ratio test */
+    if (scdmin_cost/min_cost<MATCH_RATIO) *flag+=1;
+
     /* return index of feature point */
     return *min_ind;
 }
@@ -239,7 +243,7 @@ static inline int get_address_offset_image(int u,int v,int w)
 static int match_internal(const matchopt_t *opt,match_set_t *mset,int32_t *mp,
                           int32_t *mc,int np,int nc,bool use_prior)
 {
-    int step,ub,vb,b,*M,uc,vc,un,vn,nb;
+    int step,ub,vb,b,*M,uc,vc,un,vn,nb,flag;
     ivec_t *kp,*kc;
     register int i,ip,i1c2,up,vp;
     match_point p;
@@ -266,6 +270,8 @@ static int match_internal(const matchopt_t *opt,match_set_t *mset,int32_t *mp,
     /* for all points do */
     for (i=0;i<nc;i++) {
 
+        flag=0;
+
         /* coordinates in previous image */
         uc=*(mc+step*i+0);
         vc=*(mc+step*i+1);
@@ -275,11 +281,14 @@ static int match_internal(const matchopt_t *opt,match_set_t *mset,int32_t *mp,
         nb=vn*ub+un;
 
         /* match forward/backward */
-        find_match(mc, i,mp,step,kp,ub,vb,nb,&ip  ,0,use_prior,opt);
-        find_match(mp,ip,mc,step,kc,ub,vb,nb,&i1c2,1,use_prior,opt);
+        find_match(mc, i,mp,step,kp,ub,vb,nb,&ip  ,0,use_prior,opt,&flag);
+        find_match(mp,ip,mc,step,kc,ub,vb,nb,&i1c2,1,use_prior,opt,&flag);
 
         /* circle closure success */
         if (i1c2!=i) continue;
+
+        /* ratio test */
+        if (flag>=1) continue;
 
         /* extract coordinates */
         up=*(mp+step*ip+0);
@@ -1320,8 +1329,8 @@ static void backupimg(const img_t *data,match_t *match)
 {
     int size=data->h*data->w*sizeof(unsigned char);
 
-    memcpy(match->Ic.data,data->data,size);
     memcpy(match->Ip.data,match->Ic.data,size);
+    memcpy(match->Ic.data,data->data,size);
 
     match->Ip.w   =match->Ic.w;
     match->Ip.h   =match->Ic.h;

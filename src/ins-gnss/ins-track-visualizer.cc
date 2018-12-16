@@ -49,7 +49,7 @@ extern void drawtrack(const track_t *track,const voopt_t *opt)
     trace(3,"drawtrack: n=%d\n",track->n);
 
     for (i=0;i<track->n;i++) { /* do for all tracks */
-
+                                                                                                          
         /* for each track. */
         for (j=0;j<track->data[i].n;j++) {
 
@@ -65,8 +65,8 @@ extern void drawtrack(const track_t *track,const voopt_t *opt)
 
             sprintf(allName[j],"image_%ld_%d",track->data[i].uid,track->data[i].first_frame+j);
             cv::namedWindow(allName[j],CV_WINDOW_AUTOSIZE);
-            cv::imshow(allName[j],outImage);
-            cv::waitKey(0);
+            cv::imshow(allName[j],outImage);                                                                                                                                  
+            cv::waitKey(0);                                                                                                                                                     
         }
         for (j=0;j<track->data[i].n;j++) {
             cv::destroyWindow(allName[j]);
