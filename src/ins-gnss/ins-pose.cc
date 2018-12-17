@@ -520,7 +520,7 @@ static int posecamfilt(const insopt_t *opt,const pose_meas_t *data,
             for (j=ia;j<ia+na;j++) H[j+nv*nx]=-dphida [i+(j-ia)*3];
             for (j=im;j<im+nm;j++) H[j+nv*nx]=-dphidma[i+(j-im)*3];
         }
-        r[nv]=data->var[i]==0?SQR(VARPOSE):SQR(data->var[i]);
+        r[nv]=data->var[i]==0?SQR(VARPOSE):data->var[i];
         nv++;
     }
     if (v&&nv) {

@@ -14,6 +14,7 @@
 * history : 2017/10/02 1.0 new
 *-----------------------------------------------------------------------------*/
 #include <carvig.h>
+#include <include/carvig.h>
 
 /* constants/macros ----------------------------------------------------------*/
 #define MAXDT       3600.0                 /* max time difference for ins-gnss coupled */
@@ -35,6 +36,9 @@
 #define UNC_CLKR    (10.0)                 /* default initial receiver clock drift uncertainty (/s) */
 #define UNC_CMA     (30.0*D2R)             /* default initial misalignment from camera to imu body */
 #define UNC_VMA     (30.0*D2R)             /* default initial misalignment from v-frame to b-frame */
+#define UNC_LCM     (0.5)                  /* default initial lever arm from camera to imu body uncertainty (m) */
+#define UNC_CFO     (10.0)                 /* default initial camera calibration parameters: fx,fu,ox,oy uncertainty (pixel) */
+#define UNC_CKP     (1.0)                  /* default initial camera calibration parameters: k1,k2,p1,p2 uncertainty */
 
 #define NMP         3                      /* number of position measurements for ins-gnss coupled */
 #define NMV         3                      /* number of velocity measurements for ins-gnss coupled */
@@ -95,6 +99,9 @@ static int irc=0,nrc=0;                    /* index and number of receiver clock
 static int irr=0,nrr=0;                    /* index and number of receiver clock drift state */
 static int icm=0,ncm=0;                    /* index and number of misalignment from camera to imu body */
 static int ivm=0,nvm=0;                    /* index and number of misalignment from b-frame to v-frame */
+static int icl=0,ncl=0;                    /* index and number of lever-arm from camera to imu body */
+static int ifo=0,nfo=0;                    /* index and number of camera calibration parameters: fx,fy,ox,oy */
+static int ikp=0,nkp=0;                    /* index and number of camera calibration parameters: k1,k2,p1,p2 */
 
 /* do nothing----------------------------------------------------------------*/
 extern void none(void) {}
@@ -170,12 +177,15 @@ static void resetindex(void)
     irr=nrr=0;
     icm=ncm=0;
     ivm=nvm=0;
+    icl=ncl=0;
+    ifo=nfo=0;
+    ikp=nkp=0;
     IA=NA=0; IV=NV=0; IP=NP=0;
 }
 /* initial error covariance matrix-------------------------------------------*/
 extern void getP0(const insopt_t *opt,double *P0)
 {
-    int nx=xnX(opt);
+    int nx=xnX(opt),i;
 
     trace(3,"getP0:\n");
 
@@ -199,6 +209,14 @@ extern void getP0(const insopt_t *opt,double *P0)
     initP(irr,nrr,nx,opt->unc.rr,UNC_CLKR,P0);
     initP(icm,ncm,nx,opt->unc.cma,UNC_CMA,P0);
     initP(ivm,nvm,nx,opt->unc.vma,UNC_VMA,P0);
+    initP(icl,ncl,nx,opt->unc.lma,UNC_LCM,P0);
+
+    for (i=0;i<4&nfo;i++) {
+        initP(ifo+i,1,nx,opt->unc.fo[i],UNC_CFO,P0);
+    }
+    for (i=0;i<4&nkp;i++) {
+        initP(ikp+i,1,nx,opt->unc.kp[i],UNC_CKP,P0);
+    }
 }
 /* geocentric radius---------------------------------------------------------*/
 extern double georadi(const double *pos)
@@ -238,6 +256,10 @@ extern void initlc(insopt_t *opt,insstate_t *ins)
     icm=xiCm(opt); ncm=xnCm(opt);
     ivm=xiVm(opt); nvm=xnVm(opt);
 
+    icl=xiCl (opt); ncl=xnCla(opt);
+    ifo=xiCfo(opt); nfo=xnCfo(opt);
+    ikp=xiCkp(opt); nkp=xnCkp(opt);
+
     ins->nx=xnX (opt);
     ins->nb=xnRx(opt);
     ins->x =mat(ins->nx,1); ins->P =mat(ins->nx,ins->nx);
@@ -260,7 +282,6 @@ extern void initlc(insopt_t *opt,insstate_t *ins)
     getP0(opt,ins->Pa);
 
     matcpy(ins->lever,opt->lever,3,1);
-    rpy2dcm(opt->mis_euler,ins->Cvb); /* Cvb=R(x)*R(y)*R(z) */
     ins->len=opt->len;
 
     matcpy(ins->ba,opt->imuerr.ba,1,3);
@@ -272,7 +293,13 @@ extern void initlc(insopt_t *opt,insstate_t *ins)
     odores(opt->odopt.res);
     odod(opt->odopt.d);
 
-    if (opt->usecam) initvoaid(opt);
+    if (((prcopt_t*)opt->gopt)->mode>=PMODE_INS_LGNSS_VO) {
+
+        rpy2dcm(opt->voopt.ebc,ins->Cbc);
+        matcpy(ins->lbc,opt->voopt.lbc,1,3);
+
+        initvoaid(opt);
+    }
 }
 /* free ins-gnss coupled ekf estimated states and it covariance--------------
  * args   : insstate_t *ins  IO  ins states
@@ -386,6 +413,10 @@ static void getphi_euler(const insopt_t *opt, double dt, const double *Cbe,
     stochasticPhi(opt->oaproopt,ioa,noa,nx,dt,phi);
     stochasticPhi(opt->cmaopt  ,icm,ncm,nx,dt,phi);
     stochasticPhi(opt->vmaopt  ,ivm,nvm,nx,dt,phi);
+    stochasticPhi(opt->claopt  ,icl,ncl,nx,dt,phi);
+
+    stochasticPhi(opt->cfoopt  ,ifo,nfo,nx,dt,phi);
+    stochasticPhi(opt->ckpopt  ,ikp,nkp,nx,dt,phi);
 }
 /* determine transition matrix(first-order approx: Phi=I+F*dt)---------------*/
 static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
@@ -452,6 +483,10 @@ static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
     stochasticPhi(opt->oaproopt,ioa,noa,nx,dt,phi);
     stochasticPhi(opt->cmaopt  ,icm,ncm,nx,dt,phi);
     stochasticPhi(opt->vmaopt  ,ivm,nvm,nx,dt,phi);
+
+    stochasticPhi(opt->claopt  ,icl,ncl,nx,dt,phi);
+    stochasticPhi(opt->cfoopt  ,ifo,nfo,nx,dt,phi);
+    stochasticPhi(opt->ckpopt  ,ikp,nkp,nx,dt,phi);
 }
 /* system matrix for accl-bias,gyro-bias,sg,sa and so on --------------------*/
 static void stochasticF(int opt,int ix,int nix,int nx,double *F)
@@ -1418,7 +1453,7 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
     /* backup predict ins state for RTS */
     bckup_ins_info(ins,opt,1);
 
-    /* only ins mechanization */
+    /* ins mechanization */
     if (upd==INSUPD_INSS) return stat;
 
 #if REBOOT
@@ -1470,10 +1505,9 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
                 /* update ins states cov. */
                 matcpy(ins->x,x,nx,1); matcpy(ins->P,P,nx,nx);
             }
-            /* update ins solution status */
             ins->stat=INSS_LCUD;
         }
-        /* update ins-gnss loosely coupled */
+        /* update lc's time */
         ins->plct=ins->time;
 
         /* recheck attitude */
@@ -1482,7 +1516,6 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
             rechkatt(ins,data);
         }
     }
-exit:
     free(x); free(P); free(phi);
     free(Q);
     return stat;
@@ -1562,8 +1595,8 @@ extern int ant2inins(gtime_t time,const double *rr,const double *vr,
                      int *iimu)
 {
     double llh[3],vn[3],C[9],rpy[3]={0};
-    int i;
     imud_t imus={0};
+    int i;
 
     trace(3,"ant2inins: time=%s\n",time_str(time,4));
 

@@ -5,6 +5,7 @@
 * history : 2017/03/08  1.0  new
 *----------------------------------------------------------------------------*/
 #include <carvig.h>
+#include <include/carvig.h>
 
 /* constants/macros ---------------------------------------------------------*/
 #define M39SYNC1   0x55        /* m39-mix message start sync code 1 */
@@ -76,16 +77,51 @@ extern int get_m39_img(const char *dir,const uint64_t fts,uint64_t ftns,
     closedir(dp);
     return 0;
 }
+/* read image data-----------------------------------------------------------*/
+static int readimgbuf(raw_t *raw)
+{
+    prcopt_t *popt=(prcopt_t*)raw->optp;
+    char imgpath[1024],*pstr;
+
+    sprintf(imgpath,"%s/%d_%ld_%ld.jpg",popt->monodir,raw->img.id+1,
+            raw->m39.fts.tv_sec,
+            raw->m39.fts.tv_nsec);
+
+    /* load jpg image file */
+    if (!readjpeg(imgpath,raw->m39.time,&raw->img,0)) {
+        if (get_m39_img(popt->monodir,raw->m39.fts.tv_sec,raw->m39.fts.tv_nsec,imgpath)) {
+
+            if (!readjpeg(imgpath,raw->m39.time,&raw->img,0)) {
+                trace(2,"read jpg image fail: time=%sl\n",time_str(raw->m39.time,4));
+                return 0;
+            }
+            if ((pstr=strrchr(imgpath,'/'))) {
+                sscanf(pstr,"/%d_%ld_%ld.jpg",&raw->img.id,
+                       &raw->m39.fts.tv_sec,
+                       &raw->m39.fts.tv_nsec);
+            }
+            goto ok;
+        }
+        else {
+            trace(2,"no such file: time=%s\n",
+                  time_str(raw->m39.time,4)); return 0;
+        }
+    }
+ok:
+    /* display image for debug */
+    dipsplyimg(&raw->img);
+    return 11;
+}
 /* decode m39-mix raw data---------------------------------------------------*/
 static int decode_m39_mix(raw_t *raw)
 {
     static int flag=0,j=0,week;
     static double ppsp=0.0;
-    unsigned char *p=raw->buff+4; char imgpath[1024];
+    unsigned char *p=raw->buff+4;
+
     uint64_t ts=0,tn=0;
     gtime_t time;
     double epoch[6],dt;
-    prcopt_t *popt=(prcopt_t*)raw->optp;
 
     /* pps time in tx2-clock */
     ts=p[0]; ts=ts<<8|p[1]; ts=ts<<8|p[2]; ts=ts<<8|p[3];
@@ -121,26 +157,11 @@ static int decode_m39_mix(raw_t *raw)
         dt=tsp2secs(raw->m39.fts)-tsp2secs(raw->m39.pps);
         raw->m39.time=gpst2time(week,raw->m39.sow+dt);
 #if READIMG
-        /* load jpg image file */
-        sprintf(imgpath,"%s/%d_%ld_%ld.jpg",popt->monodir,raw->img.id+1,
-                raw->m39.fts.tv_sec,
-                raw->m39.fts.tv_nsec);
-
-        if (!readjpeg(imgpath,raw->m39.time,&raw->img,0)) {
-            if (get_m39_img(popt->monodir,raw->m39.fts.tv_sec,raw->m39.fts.tv_nsec,imgpath)) {
-
-                if (!readjpeg(imgpath,raw->m39.time,&raw->img,0)) {
-                    trace(2,"read jpg image fail: time=%sl\n",time_str(raw->m39.time,4));
-                    return 0;
-                }
-            }
-            else {
-                trace(2,"no such file: time=%s\n",
-                      time_str(raw->m39.time,4)); return 0;
-            }
-        }
+        /* read image data */
+        return readimgbuf(raw);
+#else
+        return 11;
 #endif
-        return 11; 
     }
     else return 0; /* fail */
 }

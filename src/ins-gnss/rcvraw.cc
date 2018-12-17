@@ -34,6 +34,7 @@
 *-----------------------------------------------------------------------------*/
 #include <stdint.h>
 #include <carvig.h>
+#include <include/carvig.h>
 
 #define P2_34       5.820766091346740E-11 /* 2^-34 */
 #define P2_46       1.421085471520200E-14 /* 2^-46 */
@@ -859,6 +860,7 @@ extern int init_raw(raw_t *raw, int format)
     sbsmsg_t sbsmsg0={0};
     lexmsg_t lexmsg0={0};
     rinex_t rnx0={0};
+    prcopt_t *popt=(prcopt_t*)raw->optp;
     int i,j,sys,ret=1;
     
     trace(3,"init_raw: format=%d\n",format);
@@ -867,7 +869,6 @@ extern int init_raw(raw_t *raw, int format)
     raw->ephsat=0;
     raw->sbsmsg=sbsmsg0;
     raw->msgtype[0]='\0';
-    raw->optp=NULL;
     raw->strp=NULL;
     for (i=0;i<MAXSAT;i++) {
         for (j=0;j<380;j++) raw->subfrm[i][j]=0;
@@ -932,7 +933,10 @@ extern int init_raw(raw_t *raw, int format)
         raw->sta.pos[i]=raw->sta.del[i]=0.0;
     }
     raw->sta.hgt=0.0;
-    
+
+    /* initial image data buffer */
+    initimg(&raw->img,popt->insopt.voopt.match.img_w,popt->insopt.voopt.match.img_h,time0);
+
     /* initialize receiver dependent data */
     raw->format=format;
     switch (format) {
@@ -952,7 +956,7 @@ extern int init_raw(raw_t *raw, int format)
 *-----------------------------------------------------------------------------*/
 extern void free_raw(raw_t *raw)
 {
-    int i; half_cyc_t *p,*next;
+    half_cyc_t *p,*next;
     
     trace(3,"free_raw:\n");
     
@@ -963,6 +967,9 @@ extern void free_raw(raw_t *raw)
     free(raw->nav.geph ); raw->nav.geph =NULL; raw->nav.ng=0;
     free(raw->nav.seph ); raw->nav.seph =NULL; raw->nav.ns=0;
     free(raw->imut.data); raw->imut.data=NULL; raw->imut.n=0;
+
+    /* free image date buffer */
+    if (raw->img.data) free(raw->img.data); raw->img.data=NULL;
 
     /* free half-cycle correction list */
     for (p=raw->half_cyc;p;p=next) {

@@ -285,7 +285,7 @@ extern "C"{
 #define MAXIMU      500                 /* max number of imu measurement data buffer */
 #define MAXSOL      100                 /* max number of solution data buffer */
 #define MAXIMUBUF   1000                /* max number of imu measurement data buffer */
-#define MAXIMGBUF   100                 /* max number of image data buffer */
+#define MAXIMGBUF   500                 /* max number of image data buffer */
 #define MAXPOSEBUF  1000                /* max number of pose measurement buffer */
 #define MAXPOSE     50                  /* max number of input pose measurement data */
 #define MAXIMG      50                  /* max number of input image data */
@@ -1033,7 +1033,8 @@ typedef struct {            /* initial uncertainty for ins-gnss loosely coupled 
     double oa;              /* initial odometry misalignment uncertainty */
     double rc;              /* initial receiver clock uncertainty (m) */
     double rr;              /* initial receiver clock drift uncertainty (s/s) */
-    double cma;             /* initial misalignment from camera to imu body uncertainty (rad) */
+    double cma,lma;         /* initial misalignment/lever-arm from camera to imu body uncertainty (rad/m) */
+    double fo[4],kp[4];     /* initial camera calibration parameters({fx,fy,ox,oy},{k1,k2,p1,p2}) uncertainty ({pixel,1.0}) */
     double vma;             /* initial misalignment from v-frame to imu body uncertainty (rad) */
 } unc_t;
 
@@ -1097,6 +1098,9 @@ typedef struct {            /* visual odometry aid ins options (here for rectifi
     double inlier_thres;    /* fundamental matrix inlier threshold */
     double motion_thres;    /* directly return false on small motions */
     double hz;              /* camera frame update frequency */
+    double lbc[3],ebc[3];   /* lever arm/euler angle of camera to imu (m/rad)
+                             * Cbc=R(ebc[0])*R(ebc[1])*R(ebc[2])
+                             * */
     int    ransac_iters;    /* number of RANSAC iterations */
 } voopt_t;
 
@@ -1140,6 +1144,7 @@ typedef struct {            /* ins options type */
     int oaproopt;           /* odometry misalignment stochastic process option */
     int cmaopt,vmaopt;      /* camera misalignment and v-frame misalignment to b-frame stochastic process option */
     int claopt;             /* camera lever arm from b-frame to c-frame stochastic process option */
+    int cfoopt,ckpopt;      /* camera calibration parameters stochastic process option */
 
     int odo;                /* use odometry velocity measurement to aid ins */
     int pose_aid;           /* use pose measurement from dual ant. to aid ins navigation */
@@ -1169,7 +1174,6 @@ typedef struct {            /* ins options type */
 
     int lc,tc;                 /* ins-gnss loosely/tightly coupled mode (INSLC_???/INSTC_???) */
     int dopp;               /* use doppler measurement to aid ins updates states */
-    int usecam;             /* use camera measurement to aid ins update states */
     int intpref;            /* time-interpolation for observation when tightly coupled */
     int minp;               /* min number position for ins alignment */
     int soltype;            /* solution type (0:forward,1:backward,2:combined,3:RTS) */

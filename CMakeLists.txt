@@ -48,7 +48,8 @@ set_target_properties(carvig PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
                       ${PROJECT_SOURCE_DIR}/lib)
 
 add_executable(carvignav src/ins-gnss/app/igvonav.cc)
-target_link_libraries(carvignav carvig pthread)
+target_link_libraries(carvignav carvig pthread
+                      ${OpenCV_LIBS})
 
 # add test
 add_subdirectory(test)

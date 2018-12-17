@@ -24,6 +24,7 @@
 *           2017/06/14  1.11 add out-outvel
 *-----------------------------------------------------------------------------*/
 #include <carvig.h>
+#include <include/carvig.h>
 
 /* system options buffer -----------------------------------------------------*/
 static prcopt_t prcopt_;
@@ -248,7 +249,6 @@ EXPORT opt_t insopts[]={
     {"ins-hz",          1, (void *)&prcopt_.insopt.hz,       "" },
     {"ins-nhz",         1, (void *)&prcopt_.insopt.nhz,      "" },
     {"ins-lcopt",       0, (void *)&prcopt_.insopt.lcopt,    "" },
-    {"ins-usecam",      0, (void *)&prcopt_.insopt.usecam,   "" },
     {"ins-pose-aid",    0, (void *)&prcopt_.insopt.pose_aid, "" },
     {"ins-align-dualant",0,(void *)&prcopt_.insopt.align_dualants,""},
     {"ins-mis-v2b-euler1",1,(void *)&prcopt_.insopt.mis_euler[0], ""},
@@ -273,6 +273,17 @@ EXPORT opt_t insopts[]={
     {"ins-uncrc",       1, (void *)&prcopt_.insopt.unc.rc,   "" },
     {"ins-uncma",       1, (void *)&prcopt_.insopt.unc.cma,  "" },
     {"ins-unvma",       1, (void *)&prcopt_.insopt.unc.vma,  "" },
+
+    {"ins-unccaml",     1, (void *)&prcopt_.insopt.unc.lma,   ""},
+    {"ins-unccamfo-1",  1, (void *)&prcopt_.insopt.unc.fo[0], ""},
+    {"ins-unccamfo-2",  1, (void *)&prcopt_.insopt.unc.fo[1], ""},
+    {"ins-unccamfo-3",  1, (void *)&prcopt_.insopt.unc.fo[2], ""},
+    {"ins-unccamfo-4",  1, (void *)&prcopt_.insopt.unc.fo[3], ""},
+
+    {"ins-unccamkp-1",  1, (void *)&prcopt_.insopt.unc.kp[0], ""},
+    {"ins-unccamkp-2",  1, (void *)&prcopt_.insopt.unc.kp[1], ""},
+    {"ins-unccamkp-3",  1, (void *)&prcopt_.insopt.unc.kp[2], ""},
+    {"ins-unccamkp-4",  1, (void *)&prcopt_.insopt.unc.kp[3], ""},
 
     {"ins-psd_gyro",    1, (void *)&prcopt_.insopt.psd.gyro, "" },
     {"ins-psd_accl",    1, (void *)&prcopt_.insopt.psd.accl, "" },
@@ -328,6 +339,17 @@ EXPORT opt_t insopts[]={
     {"ins-vo-aid-k2",1,(void*)&prcopt_.insopt.voopt.cam.k2,},
     {"ins-vo-aid-p1",1,(void*)&prcopt_.insopt.voopt.cam.p1,},
     {"ins-vo-aid-p2",1,(void*)&prcopt_.insopt.voopt.cam.p2,},
+
+    {"ins-vo-aid-lever1",1,(void*)&prcopt_.insopt.voopt.lbc[0]},
+    {"ins-vo-aid-lever2",1,(void*)&prcopt_.insopt.voopt.lbc[1]},
+    {"ins-vo-aid-lever3",1,(void*)&prcopt_.insopt.voopt.lbc[2]},
+
+    {"ins-vo-aid-rpy1",1,(void*)&prcopt_.insopt.voopt.ebc[0]},
+    {"ins-vo-aid-rpy2",1,(void*)&prcopt_.insopt.voopt.ebc[1]},
+    {"ins-vo-aid-rpy3",1,(void*)&prcopt_.insopt.voopt.ebc[2]},
+
+    {"ins-vo-aid-img-w",0,(void*)&prcopt_.insopt.voopt.match.img_w},
+    {"ins-vo-aid-img-h",0,(void*)&prcopt_.insopt.voopt.match.img_h},
 
     {"",0,NULL,""}
 };

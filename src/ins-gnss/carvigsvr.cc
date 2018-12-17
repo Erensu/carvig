@@ -1,4 +1,4 @@
-/*------------------------------------------------------------------------------
+/*----------------------------------------------------------------------------
 * carvigsvr.cc : carvig server functions
 *
 * options : -DWIN32    use WIN32 API
@@ -553,7 +553,7 @@ static int inputimu(rtksvr_t *svr,imud_t *data)
     tracet(3,"inputimu:\n");
 
     /* check time alignment of input streams */
-    if (!svr->syn.tali[1]&&!svr->syn.tali[2]&&!svr->syn.tali[3]) {
+    if (!svr->syn.tali[1]&&!svr->syn.tali[2]&&!svr->syn.tali[3]&&!svr->syn.tali[4]) {
         trace(2,"check time alignment fail\n");
         return 0;
     }
@@ -1016,7 +1016,8 @@ static void updatetimediff(rtksvr_t *svr)
         }
         if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
             if (syn->np&&syn->ni) {
-                syn->dt[2]=time2gpst(syn->time[5],NULL)-time2gpst(syn->time[2],NULL);
+                syn->dt[2]=time2gpst(syn->time[5],NULL)-
+                        time2gpst(syn->time[2],NULL);
             }
         }
     }
@@ -1217,7 +1218,7 @@ static int imuimgalign(rtksvr_t *svr)
 
     trace(3,"imuimgalign:\n");
 
-    for (i=0;i<(syn->of[4]?MAXIMGBUF:syn->nm)&&!syn->tali[3];i++) {
+    for (i=0;i<(syn->of[4]?MAXIMGBUF:syn->nm)&&!syn->tali[4];i++) {
 
         sow1=time2gpst(svr->img[i].time,NULL);
         for (j=0;j<(syn->of[2]?MAXIMUBUF:syn->ni);j++) {
@@ -1231,9 +1232,9 @@ static int imuimgalign(rtksvr_t *svr)
             syn->tali[4]=1;
             break;
         }
-        for (k=0;(syn->of[4]?MAXIMGBUF:syn->ns)&&syn->tali[4];k++) {
+        for (k=0;k<(syn->of[4]?MAXIMGBUF:syn->ns)&&syn->tali[4];k++) {
 
-            sow3=time2gpst(svr->imu[j].time,NULL);
+            sow3=time2gpst(svr->pvt[k].time,NULL);
             if (sow2==0.0||sow3==0.0||fabs(sow3-sow2)>DTTOL) continue;
 
             trace(3,"imu and solution time align ok\n");
@@ -1392,7 +1393,7 @@ static void *rtksvrthread(void *arg)
             }
         }
         /* update time difference between input stream */
-        updatetimediff(svr);
+         updatetimediff(svr);
         
         /* time alignment for measurement data */
         if (timealign(svr)) continue;
@@ -1510,12 +1511,6 @@ static void *rtksvrthread(void *arg)
             if (iopt->odo) {
                 odo(iopt,&imus.data[i],&imus.data[i].odo,ins);
             }
-            /* camera visual odometry aid */
-            if (iopt->usecam) {
-
-                /* coupled with vo */
-                voigpos(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt)); 
-            }
             /* dual ant. or camera pose aid */
             if (iopt->pose_aid) {
 
@@ -1586,6 +1581,14 @@ static void *rtksvrthread(void *arg)
             if (iopt->magh) {
                 magnetometer(ins,iopt,&mag);
             }
+            /* dual ant. or camera pose aid */
+            if (iopt->pose_aid) {
+
+                flag=inputpose(svr,imus.data[i].time,&pose);
+                if (flag) {
+                    posefusion(iopt,&pose,ins,INSUPD_MEAS);
+                }
+            }
             rtksvrunlock(svr);
 
             /* output results */
@@ -1594,6 +1597,82 @@ static void *rtksvrthread(void *arg)
             /* if cpu overload, inclement obs outage counter and break */
             if ((int)(tickget()-tick)>=svr->cycle) {
                 svr->iprcout+=imus.n-i-1;
+            }
+        }
+        /* ins-gnss-vo coupled position mode */
+        if (opt->mode==PMODE_INS_LGNSS_VO) {
+
+            for (i=0;i<imus.n;i++) {
+                if (inputpvt(svr,imus.data[i].time,&psol)) {
+                    sol2gnss(&psol,&gnss);
+                    j=INSUPD_MEAS;
+                }
+                else {
+                    /* ins mechanization */
+                    j=INSUPD_TIME;
+                }
+                if (init==0||svr->reinit) {
+                    flag=0; if (iopt->align_dualants) {
+
+                        /* initial ins states from dual antennas */
+                        if (inputpose(svr,imus.data[i].time,&pose)&&j==INSUPD_MEAS) {
+                            flag=insinitdualant(svr,&pose,&psol,&imus.data[i]);
+                        }
+                    }
+                    else {
+                        /* initial ins states from solutions */
+                        if (j==INSUPD_MEAS) {
+                            flag=insinitrt(svr,&psol,&imus.data[i]);
+                        }
+                    }
+                    /* initial ins states ok */
+                    if (flag) {
+                        if (svr->reinit) {
+                            svr->rtk.ins.stat=INSS_REINIT;
+                            svr->reinit=0;
+                        }
+                        init=1;
+                        tracet(3,"ins initial ok\n");
+                    }
+                    if (!init) {
+                        tracet(2,"ins initialing\n");
+                        continue;
+                    }
+                }
+                rtksvrlock(svr);
+                lcigpos(iopt,imus.data+i,ins,&gnss,j); /* loosely coupled position */
+
+                /* motion constraint */
+                motion(iopt,imuz,ins,&imus.data[i],ws);
+
+                /* odometry velocity aid */
+                if (iopt->odo) {
+                    odo(iopt,&imus.data[i],&imus.data[i].odo,ins);
+                }
+                /* dual ant. or camera pose aid */
+                if (iopt->pose_aid) {
+
+                    flag=inputpose(svr,imus.data[i].time,&pose);
+                    if (flag) {
+                        posefusion(iopt,&pose,ins,INSUPD_MEAS);
+                    }
+                }
+                /* magnetometer auxiliary */
+                if (iopt->magh) {
+                    magnetometer(ins,iopt,&mag);
+                }
+                /* coupled with vo */
+                voigpos(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt));
+                
+                rtksvrunlock(svr);
+
+                /* output results */
+                outrslt(svr,&gnss,tick,i);
+
+                /* if cpu overload,inclement obs outage counter and break */
+                if ((int)(tickget()-tick)>=svr->cycle) {
+                    svr->iprcout+=imus.n-i-1;
+                }
             }
         }
         /* reset measurement buffer */
@@ -1691,12 +1770,7 @@ extern int carvigsvrinit(rtksvr_t *svr)
     svr->nav.ng=NSATGLO*2;
     svr->nav.ns=NSATSBS*2;
     for (i=0;i<2;i++) for (j=0;j<7;j++) svr->nav.sind[i][j]=sig0;
-    for (i=0;i<MAXIMGBUF;i++) {
-        initimg(&svr->img[i],svr->rtk.opt.insopt.voopt.match.img_w,svr->rtk.opt.insopt.voopt.match.img_h,time0);
-    }
-    for (i=0;i<7;i++) {
-        initimg(&svr->raw[i].img,svr->rtk.opt.insopt.voopt.match.img_w,svr->rtk.opt.insopt.voopt.match.img_h,time0);
-    }
+
     for (i=0;i<3;i++) for (j=0;j<MAXOBSBUF;j++) {
         if (!(svr->obs[i][j].data=(obsd_t *)malloc(sizeof(obsd_t)*MAXOBS))) {
             tracet(1,"rtksvrinit: malloc error\n");
@@ -1817,7 +1891,8 @@ extern int carvigsvrstart(rtksvr_t *svr, int cycle, int buffsize, int *strs,
                           int nmeareq, const double *nmeapos, prcopt_t *prcopt,
                           solopt_t *solopt, stream_t *moni, char *errmsg)
 {
-    gtime_t time;
+    voopt_t *voopt=&prcopt->insopt.voopt;
+    gtime_t time,time0={0};
     int i,j,rw;
     
     tracet(3,"carvigsvrstart: cycle=%d buffsize=%d navsel=%d nmeacycle=%d nmeareq=%d\n",
@@ -1859,6 +1934,8 @@ extern int carvigsvrstart(rtksvr_t *svr, int cycle, int buffsize, int *strs,
             for (j=0;j<MAXOBSBUF;j++) svr->obs[i][j].n=0;
         }
         strcpy(svr->cmds_periodic[i],!cmds_periodic[i]?"":cmds_periodic[i]);
+
+        svr->raw[i].optp=&svr->rtk.opt;
         
         /* initialize receiver raw and rtcm control */
         init_raw(svr->raw+i,formats[i]);
@@ -1908,9 +1985,6 @@ extern int carvigsvrstart(rtksvr_t *svr, int cycle, int buffsize, int *strs,
             svr->rtcm[i].time=strs[i]==STR_FILE?strgettime(svr->stream+i):time;
         }
     }
-    /* put option to raw struct */
-    for (i=0;i<7;i++) svr->raw[i].optp=&svr->rtk.opt;
-
     /* put stream pointer to raw struct */
     for (i=0;i<7;i++) svr->raw[i].strp=&svr->stream[i];
 
@@ -1921,6 +1995,10 @@ extern int carvigsvrstart(rtksvr_t *svr, int cycle, int buffsize, int *strs,
     /* mono camera image directory */
     for (i=0;i<7;i++) {
         strcpy(svr->raw[i].monodir,prcopt->monodir);
+    }
+    /* initial image data buffer */
+    for (i=0;i<MAXIMGBUF;i++) {
+        initimg(&svr->img[i],voopt->match.img_w,voopt->match.img_h,time0);
     }
     /* sync input streams */
     strsync(svr->stream,svr->stream+1);

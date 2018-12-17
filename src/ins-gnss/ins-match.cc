@@ -13,6 +13,7 @@
 #include <emmintrin.h>
 #include <pmmintrin.h>
 #include <triangle.h>
+#include <include/carvig.h>
 
 /* constants ----------------------------------------------------------------*/
 #define add_data_func_delc(data_type,add_data_type)            \
@@ -1439,7 +1440,7 @@ extern int initimg(img_t *data,int w,int h,gtime_t time)
         trace(2,"initial ima fail\n");
         return 0;
     }
-    data->time=time;
+    data->time=time; data->w=w; data->h=h;
     data->id=0;
     return 1;
 }
