@@ -211,10 +211,10 @@ extern void getP0(const insopt_t *opt,double *P0)
     initP(ivm,nvm,nx,opt->unc.vma,UNC_VMA,P0);
     initP(icl,ncl,nx,opt->unc.lma,UNC_LCM,P0);
 
-    for (i=0;i<4&nfo;i++) {
+    for (i=0;i<4&&nfo;i++) {
         initP(ifo+i,1,nx,opt->unc.fo[i],UNC_CFO,P0);
     }
-    for (i=0;i<4&nkp;i++) {
+    for (i=0;i<4&&nkp;i++) {
         initP(ikp+i,1,nx,opt->unc.kp[i],UNC_CKP,P0);
     }
 }
@@ -298,6 +298,13 @@ extern void initlc(insopt_t *opt,insstate_t *ins)
         rpy2dcm(opt->voopt.ebc,ins->Cbc);
         matcpy(ins->lbc,opt->voopt.lbc,1,3);
 
+        ins->fx=opt->voopt.calib.fu; ins->fy=opt->voopt.calib.fv;
+        ins->ox=opt->voopt.calib.cu; ins->oy=opt->voopt.calib.cv;
+
+        ins->k1=opt->voopt.cam.k1;
+        ins->k2=opt->voopt.cam.k2;
+        ins->p1=opt->voopt.cam.p1;
+        ins->p2=opt->voopt.cam.p2;
         initvoaid(opt);
     }
 }

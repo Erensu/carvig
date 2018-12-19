@@ -17,15 +17,65 @@
  * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
  * history : 2018/10/25 1.0 new
  *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
+#include "hash-table.h"
 
 /* constants------------------------------------------------------------------*/
-#define REFINE          1         /* tracking refine feature points */
-#define OUTPUT_PPM      1         /* output tracking data to ppm file */
+#define REFINE                 1         /* tracking refine feature points */
+#define OUTPUT_PPM             1         /* output tracking data to ppm file */
+#define HASH_FIND_TRACK        1         /* find track index from hash table */
+#define REPLACE_LOST_FEATURE   1         /* replace lost track feature in `struct: track_t' */
+
+/* type definitions ----------------------------------------------------------*/
+typedef struct hashtable {        /* hash table type */
+    int index,last_idx;           /* index of track feature for matching */
+    UT_hash_handle hh;            /* makes this structure hashable */
+} hashtable_t;
 
 /* global variables-----------------------------------------------------------*/
 static long int id_seed=1;        /* generate a new feature id */
+static hashtable_t *hash=NULL;    /* hash table storing all track feature index in `struct:track_t' */
 
+/* add element to hash table---------------------------------------------------*/
+static void hash_add(hashtable_t **ht,const int index,int last_idx)
+{
+    struct hashtable *s=NULL;
+    HASH_FIND_INT(*ht,&last_idx,s);  /* id already in the hash? */
+    if (s==NULL) {
+
+        s=(struct hashtable *)malloc(sizeof(struct hashtable));
+        s->last_idx=last_idx;
+        s->index=index;
+        HASH_ADD_INT(*ht,last_idx,s);
+    }
+}
+/* delete hash table-----------------------------------------------------------*/
+static void hash_delete(hashtable_t **ht)
+{
+    struct hashtable *current,*tmp;
+
+    HASH_ITER(hh,*ht,current,tmp) {
+        HASH_DEL(*ht,current);  /* delete; users advances to next */
+        free(current);          /* optional- if you want to free  */
+    }
+}
+/* counts of elements in hash table-------------------------------------------*/
+static int hash_counts(const struct hashtable *ht)
+{
+    return HASH_COUNT(ht);
+}
+/* find track data from hash table--------------------------------------------*/
+static int hash_findtrack(hashtable_t **ht,const int last_idx)
+{
+    struct hashtable *s=NULL;
+    int index;
+
+    HASH_FIND_INT(*ht,&last_idx,s);  /* s: output pointer */
+    if (s==NULL) return -1;
+
+    index=s->index;
+    HASH_DEL(*ht,s); return index;
+}
 /* initial track---------------------------------------------------------------
  * args:    trackd_t *data  IO  track set data
  *          voopt_t *opt    I   track options
@@ -36,7 +86,7 @@ extern int inittrack(trackd_t *data,const voopt_t *opt)
     gtime_t t0={0};
 
     data->ts=data->te=t0;
-    data->n=data->nmax=0; data->uid=id_seed++; sprintf(data->name,"%ld",data->uid);
+    data->n=data->nmax=0; data->uid=id_seed++;
     data->data=NULL;
     data->I   =NULL;
     return 1;
@@ -44,11 +94,15 @@ extern int inittrack(trackd_t *data,const voopt_t *opt)
 /* find a track in tracking set data------------------------------------------*/
 static int findtrack(const track_t *track,const match_point *mp)
 {
+#if HASH_FIND_TRACK
+    return hash_findtrack(&hash,mp->ip);
+#else
     int i;
     for (i=0;i<track->n;i++) {
         if (mp->ip==track->data[i].last_idx) return i;
     }
-    return track->n;
+    return -1;
+#endif
 }
 /* copy image data------------------------------------------------------------*/
 static int copyimg(img_t *out,const img_t *in)
@@ -66,7 +120,7 @@ static int addnewfeatimg(trackd_t *track,const feature *feat,const img_t *img)
     feature *obs_data;
 
     if (track->nmax<=track->n) {
-        if (track->nmax<=0) track->nmax=1024; else track->nmax*=2;
+        if (track->nmax<=0) track->nmax=8; else track->nmax*=2;
         if (!(obs_data=(feature *)realloc(track->data,sizeof(feature)*track->nmax))) {
             free(track->data); track->data=NULL;
 
@@ -125,9 +179,11 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
 {
     int index;
 
+#if REPLACE_LOST_FEATURE
     /* find index of lost track feature */
     if ((index=indexofrptrack(track))>=0) return index;
 
+#endif
     /* new track. */
     feature fp,fc; trackd_t ntrack;
 
@@ -137,7 +193,7 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
     fc.time=tc; fc.u=mp->uc; fc.v=mp->vc;
     fc.valid=1; fc.status=FEAT_CREATE;
 
-    /* add feature. */
+    /* add track feature. */
     inittrack(&ntrack,opt);
     addnewfeatimg(&ntrack,&fp,pimg); addnewfeatimg(&ntrack,&fc,cimg);
 
@@ -145,17 +201,17 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
     ntrack.first_frame=curr_frame-1;
     ntrack.last_frame =curr_frame;
     ntrack.last_idx   =mp->ic;
-
-    /* timestamp */
-    ntrack.ts=tp; ntrack.te=tc;
-
+    ntrack.ts=tp;
+    ntrack.te=tc;
     ntrack.flag=1;
 
-    /* add new track */
+    /* add new track to track table */
     if (addnewtrack(track,&ntrack)<=0) {
         trace(2,"add new track fail\n");
         return 0;
     }
+    /* add `index' to hash table */
+    hash_add(&hash,track->n-1,ntrack.last_idx);
     return track->n-1;
 }
 /* matched feature points set data convert to track set-----------------------
@@ -195,10 +251,10 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         return 1;
     }
     for (i=0;i<mset->n;i++) {
-        if (findtrack(track,&mset->data[i])<0) {
+        if ((idx=findtrack(track,&mset->data[i]))<0) {
 
             /* create a new track */
-            if ((idx=newtrack(&mset->data[i],tp,tc,curr_frame,opt,track,pimg,cimg)<0)) return 0;
+            if ((idx=newtrack(&mset->data[i],tp,tc,curr_frame,opt,track,pimg,cimg))<0) return 0;
 
             /* update index */
             track->newtrack[track->nnew]=idx;
@@ -220,6 +276,9 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         /* track flag. */
         track->data[idx].last_idx  =mset->data[i].ic;
         track->data[idx].last_frame=curr_frame;
+
+        /* add `index' to hash table */
+        hash_add(&hash,idx,track->data[idx].last_idx);
 
         /* timestamp */
         track->data[idx].te=tc;
@@ -258,6 +317,7 @@ extern void freetrackset(track_t *track)
         for (i=0;i<track->n;i++) freetrack(&track->data[i]);
     }
     track->n=track->nmax=0;
+    if (hash) hash_delete(&hash);
 }
 /* write feature points to PPM file-------------------------------------------
  * args:    feature *featurelist    I  feature points list

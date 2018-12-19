@@ -935,8 +935,9 @@ extern int init_raw(raw_t *raw, int format)
     raw->sta.hgt=0.0;
 
     /* initial image data buffer */
-    initimg(&raw->img,popt->insopt.voopt.match.img_w,popt->insopt.voopt.match.img_h,time0);
-
+    if (popt&&popt->insopt.voopt.match.img_w&&popt->insopt.voopt.match.img_h) {
+        initimg(&raw->img,popt->insopt.voopt.match.img_w,popt->insopt.voopt.match.img_h,time0);
+    }
     /* initialize receiver dependent data */
     raw->format=format;
     switch (format) {

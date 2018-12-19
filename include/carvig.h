@@ -761,8 +761,7 @@ typedef struct trackd {         /* feature points track record */
                                  * 3: bad track,
                                  * 4: have used to filter
                                  * */
-    long int uid;               /* a unique identifier of this track */
-    char name[16];              /* name of track (equals to feature point's name) */
+    int uid;                    /* a unique identifier of this track */
     struct feature *data;       /* track feature data */
     img_t   *I;                 /* store tracking image data for debugs */
     double xyz[3];              /* feature position in ecef */
@@ -3247,6 +3246,9 @@ EXPORT int kalibrrosbag(const char *datfile,const char *imufile,
 
 EXPORT void updcamposevar(const insopt_t *opt,const double *var,vostate_t *vo);
 EXPORT void initcamposevar(const insopt_t *opt,insstate_t *ins,vostate_t *vo);
+
+EXPORT void rt2tf(const double *R,const double *t,double *T);
+EXPORT void tf2rt(const double *T,double *R,double *t);
 
 /* ins-gnss-vo coupled post-processing----------------------------------------*/
 EXPORT int igvopostpos(const gtime_t ts, gtime_t te, double ti, double tu,

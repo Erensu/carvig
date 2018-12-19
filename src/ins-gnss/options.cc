@@ -216,6 +216,10 @@ EXPORT opt_t insopts[]={
     {"ins-estodoa",     0, (void *)&prcopt_.insopt.estodoa,  "" },
     {"ins-estodol",     0, (void *)&prcopt_.insopt.estodol,  "" },
     {"ins-estmisv",     0, (void *)&prcopt_.insopt.estmisv,  "" },
+    {"ins-estcaml",     0, (void *)&prcopt_.insopt.estcaml,  "" },
+    {"ins-estcamfo",    0, (void *)&prcopt_.insopt.estcam_fo,"" },
+    {"ins-estcamkp",    0, (void *)&prcopt_.insopt.estcam_kp,"" },
+    
     {"ins-baproopt",    0, (void *)&prcopt_.insopt.baproopt, "" },
     {"ins-bgproopt",    0, (void *)&prcopt_.insopt.bgproopt, "" },
     {"ins-sgproopt",    0, (void *)&prcopt_.insopt.sgproopt, "" },
@@ -228,6 +232,9 @@ EXPORT opt_t insopts[]={
     {"ins-oaproopt",    0, (void *)&prcopt_.insopt.oaproopt, "" },
     {"ins-cmaopt",      0, (void *)&prcopt_.insopt.cmaopt,   "" },
     {"ins-vmaopt",      0, (void *)&prcopt_.insopt.vmaopt,   "" },
+    {"ins-foproopt",    0, (void *)&prcopt_.insopt.cfoopt,   "" },
+    {"ins-kpproopt",    0, (void *)&prcopt_.insopt.ckpopt,   "" },
+    {"ins-claopt",      0, (void *)&prcopt_.insopt.claopt,   "" },
 
     {"ins-imuformat",   0, (void *)&prcopt_.insopt.imuformat,"" },
     {"ins-imudecfmt",   0, (void *)&prcopt_.insopt.imudecfmt,"" },
@@ -334,6 +341,18 @@ EXPORT opt_t insopts[]={
     {"ins-vo-aid-bucket-w",     1, (void *)&prcopt_.insopt.voopt.match.bucket.w,    "" },
     {"ins-vo-aid-bucket-h",     1, (void *)&prcopt_.insopt.voopt.match.bucket.h,    "" },
     {"ins-vo-aid-bucket-nmax",  0, (void *)&prcopt_.insopt.voopt.match.bucket.nmax, "" },
+
+    {"ins-vo-aid-match-binsize"   ,0,(void *)&prcopt_.insopt.voopt.match.match_binsize,   ""},
+    {"ins-vo-aid-match-radius"    ,0,(void *)&prcopt_.insopt.voopt.match.match_radius,    ""},
+    {"ins-vo-aid-match-disp_tol"  ,0,(void *)&prcopt_.insopt.voopt.match.match_disp_tol,  ""},
+    {"ins-vo-aid-outlier-disp_tol",0,(void *)&prcopt_.insopt.voopt.match.outlier_disp_tol,""},
+    {"ins-vo-aid-outlier-flow_tol",0,(void *)&prcopt_.insopt.voopt.match.outlier_flow_tol,""},
+
+    {"ins-vo-aid-multi-stage",0,(void *)&prcopt_.insopt.voopt.match.multi_stage},
+    {"ins-vo-aid-half-res"   ,0,(void *)&prcopt_.insopt.voopt.match.half_res   },
+    {"ins-vo-aid-refine"     ,0,(void *)&prcopt_.insopt.voopt.match.refine     },
+    {"ins-vo-aid-nms-n"      ,0,(void *)&prcopt_.insopt.voopt.match.nms_n      },
+    {"ins-vo-aid-nms-tau"    ,0,(void *)&prcopt_.insopt.voopt.match.nms_tau    },
 
     {"ins-vo-aid-k1",1,(void*)&prcopt_.insopt.voopt.cam.k1,},
     {"ins-vo-aid-k2",1,(void*)&prcopt_.insopt.voopt.cam.k2,},

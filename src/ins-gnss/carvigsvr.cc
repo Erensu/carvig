@@ -7,7 +7,6 @@
 * history : 2018/12/15  1.0  new
 *----------------------------------------------------------------------------*/
 #include <carvig.h>
-#include <include/carvig.h>
 
 /* constants ----------------------------------------------------------------*/
 #define MIN_INT_RESET   30000      /* mininum interval of reset command (ms) */
@@ -15,6 +14,7 @@
 #define REALTIME        0          /* real time process rover observation data */
 #define MAXTIMEDIFF     0.5        /* max time difference for suspend input stream */
 #define OUTSOLFRQ       100        /* frequency of output ins solutions */
+#define DTTOL_IMG       0.025      /* tolerance of time difference (s) */
 
 #define NS(i,j,max)     ((((j)-1)%(max)-(i))<0?(((j)-1)%(max)-(i)+(max)):(((j)-1)%(max)-(i)))
 #define NE(i,j,max)     MAX(0,(((i)-(j))<0?((i)-(j)+(max)):((i)-(j))))

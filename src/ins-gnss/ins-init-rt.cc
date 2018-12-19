@@ -14,16 +14,15 @@
 * history : 2017/01/21 1.0 new
 *----------------------------------------------------------------------------*/
 #include <carvig.h>
-#include <include/carvig.h>
 
 /* constants ----------------------------------------------------------------*/
 #define MINSOL        5                  /* max number of solution data */
-#define MINVEL        5.0                /* min velocity for initial ins states */
+#define MINVEL        1.5                /* min velocity for initial ins states */
 #define MAXGYRO       (30.0*D2R)         /* max rotation speed value for initial */
 #define MAXVAR_POSE   (5.0*D2R)          /* max variance of pose measurement */
 #define MAXDIFF       10.0               /* max time difference between solution */
 #define ADJOBS        1                  /* adjust observation data */
-#define ONLY_INIT_YAW 1                  /* only initial yaw from dual ants. measurement data */
+#define ONLY_INIT_YAW 0                  /* only initial yaw from dual ants. measurement data */
 
 /* coordinate rotation matrix ------------------------------------------------*/
 #define Rx(t,X) do {                                     \
@@ -76,8 +75,8 @@ extern int insinitrt(rtksvr_t *svr,const sol_t *sol,const imud_t *imu)
     insopt_t *iopt=&svr->rtk.opt.insopt;
     insstate_t *ins=&svr->rtk.ins;
     static sol_t sols[MINSOL]={0};
-    int i;
     double vr[3]={0};
+    int i;
 
     trace(3,"insinitrt: time=%s\n",time_str(imu->time,4));
 
@@ -216,6 +215,7 @@ extern int insinitdualant(rtksvr_t *svr,const pose_meas_t *pose,const sol_t *sol
     static sol_t sols[MINSOL]={0};
     insopt_t *iopt=&svr->rtk.opt.insopt;
     insstate_t *ins=&svr->rtk.ins;
+    pose_meas_t posem;
     int i;
 
     trace(3,"insinitdualant:\n");
@@ -252,16 +252,18 @@ extern int insinitdualant(rtksvr_t *svr,const pose_meas_t *pose,const sol_t *sol
 
 #if ONLY_INIT_YAW
     if (SQRT(pose->var[2])>MAXVAR_POSE) {
-        trace(2,"large pose variance\n");
+        trace(2,"initial yaw fail due to large variance\n");
         return 0;
     }
-    pose->rpy[0]=pose->rpy[1]=0.0;
+    posem=*pose;
+    posem.rpy[0]=posem.rpy[1]=0.0;
 #else
     /* check pose measurement availability */
     if (SQRT(pose->var[0]+pose->var[1]+pose->var[2])>MAXVAR_POSE) {
         trace(2,"large pose variance\n");
         return 0;
     }
+    posem=*pose;
 #endif
     /* initial carvig-sever */
     initinsrt(svr);
@@ -270,19 +272,19 @@ extern int insinitdualant(rtksvr_t *svr,const pose_meas_t *pose,const sol_t *sol
     ecef2pos(sols[MINSOL-1].rr,pos);
     ned2xyz(pos,Cne);
 
-    Ry(-(pose->rpy[1]-iopt->mis_euler[1]*D2R),Ry);
-    Rz(-(pose->rpy[2]-iopt->mis_euler[2]*D2R),Rz);
+    Ry(-(posem.rpy[1]-iopt->mis_euler[1]*D2R),Ry);
+    Rz(-(posem.rpy[2]-iopt->mis_euler[2]*D2R),Rz);
     matmul("NN",3,3,3,1.0,Rz,Ry,0.0,Cbn);
 
-    Ry(-pose->rpy[1],Ry);
-    Rz(-pose->rpy[2],Rz);
+    Ry(-posem.rpy[1],Ry);
+    Rz(-posem.rpy[2],Rz);
     matmul("NN",3,3,3,1.0,Rz,Ry,0.0,Cvn);
 
     matmul("TN",3,3,3,1.0,Cbn,Cvn,0.0,ins->Cvb);
 
     matmul33("NNT",Cne,Cvn,ins->Cvb,3,3,3,3,ins->Cbe);
-    gapv2ipv(sols[MINSOL-1].rr,vr,ins->Cbe,ins->lever,
-             imu,ins->re,ins->ve);
+    gapv2ipv(sols[MINSOL-1].rr,vr,ins->Cbe,
+             ins->lever,imu,ins->re,ins->ve);
 
     /* update ins state in n-frame */
     update_ins_state_n(ins);

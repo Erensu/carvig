@@ -251,16 +251,8 @@ extern int readjpeg(const char *imgfile,gtime_t time,img_t *img,int flag)
     /* image raw data buffer */
     buffer=(*cinfo.mem->alloc_sarray)((j_common_ptr)&cinfo,JPOOL_IMAGE,row_width,1);
 
-    if (flag==0) { /* left */
-        img->data=(unsigned char*)malloc(row_width*cinfo.output_height);
-        memset(img->data,0,row_width*cinfo.output_height);
-        tmp=img->data;
-    }
-    else if (flag==1) { /* right */
-        img->data=(unsigned char*)malloc(row_width*cinfo.output_height);
-        memset(img->data,0,row_width*cinfo.output_height);
-        tmp=img->data;
-    }
+    tmp=img->data;
+
     /* read image raw data */
     while (cinfo.output_scanline<cinfo.output_height) {
         jpeg_read_scanlines(&cinfo,buffer,1);

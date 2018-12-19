@@ -28,13 +28,12 @@
  * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
  * history : 2018/12/02 1.0 new
  *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
+#include "hash-table.h"
 
 /* constants-------------------------------------------------------------------*/
 #define MIN_TRACK_LEN               2         /* min length of tracking data */
 #define MAX_TRACK_LEN               20        /* max length of tracking data */
-#define MINIMUM_CAPACITY            100       /* min capacity of hash table */
-#define HASH_STRING_RIGHT_SHIFT     ((sizeof(hash_t)*8)-9)
 #define VAR_FEAT                    SQR(3.0)  /* variance of feature point in image coordinates */
 #define SWAP(type,x,y)              {type tmp; tmp=x; x=y; y=tmp;}
 #define MAXITER                     10        /* max iteration for Gauss Newton optimization */
@@ -44,26 +43,11 @@
 #define USE_BUCKET_FEATS            1         /* use bucket matched feature points data */
 
 /* type definitions ----------------------------------------------------------*/
-typedef uint32_t hash_t;
-
-typedef struct hashtable_entry {             /* hash table entry type */
-    const void *key,*value;
-    hashtable_entry *next;                   /* for internal use; don't use to iterate through. */
-} hashtable_entry_t;
-
-typedef struct hashtable {                   /* hash table type */
-    hashtable_entry_t **entries;             /* hash table entry */
-    int capacity;                            /* capacity of hash table */
-    int size;                                /* size of hash table */
-    hash_t (*hash)(const void*);
-    int (*equals)(const void*,const void*);
+typedef struct hashtable {                    /* hash table type */
+    int id;                                   /* id of track feature point */
+    const trackd_t *ptrk;                     /* pointer of this track feature point */
+    UT_hash_handle hh;                        /* makes this structure hashable */
 } hashtable_t;
-
-typedef struct hashtable_iterator {          /* hash table iterator element type */
-    hashtable_t *ht;
-    int nextbucket;
-    hashtable_entry_t *nextentry;
-} hashtable_iterator_t;
 
 typedef struct cams {                         /* camera pose states type */
     gtime_t time;                             /* timestamp of ins states */
@@ -85,165 +69,69 @@ static vofilt_t vofilt={0};                   /* vo aid filter workspace */
 static track_t  tracks={0};                   /* all tracking feature points data */
 static match_t  matchs={0};                   /* match feature points data */
 
-/* hash table unique identifier ----------------------------------------------*/
-static hash_t hash_string(const void *t)
+/* add a track feature to hash table------------------------------------------*/
+static void hash_add_feature(struct hashtable **ht,const int id,const trackd_t *ptk)
 {
-    const char *s=(char*)t;
-    hash_t h=0;
-    int idx=0;
+    struct hashtable *s=NULL;
+    HASH_FIND_INT(*ht,&id,s);  /* id already in the hash? */
+    if (s==NULL) {
 
-    while (s[idx]!=0) {
-        h=(h<<7)+s[idx]+(h>>HASH_STRING_RIGHT_SHIFT);
-        idx++;
+        s=(struct hashtable *)malloc(sizeof *s);
+        s->id=id;
+        s->ptrk=ptk;
+        HASH_ADD_INT(*ht,id,s);  /* id: name of key field */
     }
-    return h;
 }
-static int equals_string(const void *a, const void *b)
+/* find a track feature from hash table---------------------------------------*/
+static hashtable* hash_find_feature(const struct hashtable *ht,const int id)
 {
-    return !strcmp((char*)a,(char*)b);
-}
-/* create a hash table--------------------------------------------------------*/
-static hashtable_t *hashtable_create(int capacity)
-{
-    hashtable_t *ht=(hashtable_t*)calloc(1,sizeof(hashtable_t));
-    ht->size=0;
-    ht->capacity=MAX(capacity,MINIMUM_CAPACITY);
-    ht->entries =(hashtable_entry_t**)calloc(ht->capacity,sizeof(hashtable_entry_t*));
-    ht->hash  =hash_string;
-    ht->equals=equals_string;
-    return ht;
-}
-/* hash table destroy---------------------------------------------------------*/
-static void hashtable_destroy(hashtable_t *ht)
-{
-    int i;
+    struct hashtable *s=NULL; 
 
-    for (i=0;i<ht->capacity;i++) {
-        hashtable_entry_t *e=ht->entries[i];
-        while (e!=NULL) {
-            hashtable_entry_t *n=e->next;
-            free(e);
-            e=n;
-        }
-    }
-    free(ht->entries);
-    free(ht);
+    HASH_FIND_INT(ht,&id,s);  /* s: output pointer */
+    return s;
 }
-/* create a hash table iterator-----------------------------------------------*/
-static hashtable_iterator_t* hashtable_iterator_create(hashtable_t *ht)
+/* remove element from hash table---------------------------------------------*/
+static void hash_delete_feature(struct hashtable **ht,const int id)
 {
-    hashtable_iterator_t *hi=(hashtable_iterator_t*)calloc(1,sizeof(hashtable_iterator_t));
-    hi->ht=ht;
-    hi->nextbucket=0;
-    hi->nextentry =NULL;
-    return hi;
-}
-static void hashtable_iterator_destroy(hashtable_iterator_t *hi)
-{
-    free(hi);
-}
-static hashtable_entry_t* hashtable_iterator_next(hashtable_iterator_t *hi)
-{
-    while (hi->nextentry==NULL&&hi->nextbucket<hi->ht->capacity) {
-        hi->nextentry=hi->ht->entries[hi->nextbucket++];
-    }
-    if (hi->nextentry==NULL) return NULL;
-
-    hashtable_entry_t *e=hi->nextentry;
-    hi->nextentry=hi->nextentry->next;
-    return e;
-}
-/* hash table grow------------------------------------------------------------*/
-static void hashtable_grow(hashtable_t *ht)
-{
-    if ((ht->size+1)<(ht->capacity*2/3)) {
+    struct hashtable *s=NULL;
+    if (!(s=hash_find_feature(*ht,id))) {
+        trace(2,"no feature to delete\n");
         return;
     }
-    int newcapacity=ht->size*3/2;
-    if (newcapacity<MINIMUM_CAPACITY)newcapacity=MINIMUM_CAPACITY;
-
-    hashtable_entry_t** newentries=(hashtable_entry_t**)calloc(newcapacity,sizeof(hashtable_entry_t));
-    hashtable_iterator_t *hi=hashtable_iterator_create(ht);
-    while (hashtable_iterator_next(hi)) {
-
-        hashtable_entry_t *e=hashtable_iterator_next(hi);
-        hash_t h=ht->hash(e->key);
-        int idx=h%ht->capacity;
-
-        e->next=newentries[idx];
-        newentries[idx]=e->next;
-    }
-    hashtable_iterator_destroy(hi);
-    ht->entries =newentries;
-    ht->capacity=newcapacity;
-    free(ht->entries);
+    HASH_DEL(*ht,s);  /* user: pointer to deletee */
+    free(s);
 }
-/* get capacity --------------------------------------------------------------*/
-static int hashtable_size(hashtable_t *ht)
+/* delete hash table----------------------------------------------------------*/
+static void hash_destroy(struct hashtable **ht)
 {
-    return ht->size;
-}
-/* remove a element from hash table-------------------------------------------*/
-static void hashtable_remove(hashtable_t *ht, const void *key)
-{
-    hash_t h=ht->hash(key);
+    struct hashtable *current,*tmp;
 
-    int idx=h%ht->capacity;
-    hashtable_entry_t *e=ht->entries[idx];
-    hashtable_entry_t **pe=&ht->entries[idx];
-    while (e!=NULL) {
-        if (ht->equals(e->key,key)) {
-            *pe=e->next; free(e);
-            ht->size--; return;
-        }
-        pe=&(e->next);
-        e =e->next;
+    HASH_ITER(hh,*ht,current,tmp) {
+        HASH_DEL(*ht,current);  /* delete; users advances to next */
+        free(current);          /* optional- if you want to free  */
     }
 }
-/* get a elememt from hash table----------------------------------------------*/
-static const void* hashtable_get(hashtable_t *ht, const void *key)
+/* create a hash table--------------------------------------------------------*/
+static struct hashtable *hashtable()
 {
-    hash_t h=ht->hash(key);
-
-    int idx=h%ht->capacity;
-    hashtable_entry_t *e=ht->entries[idx];
-    while (e!=NULL) {
-        if (ht->equals(e->key,key)) {
-            return e->value;
-        }
-        e=e->next;
-    }
     return NULL;
 }
-/* push a element to hash table-----------------------------------------------*/
-static void hashtable_put(hashtable_t *ht, const void *key, const void *value)
+/* counts of elements in hash table-------------------------------------------*/
+static int hash_counts(const struct hashtable *ht)
 {
-    hash_t h=ht->hash(key);
-
-    int idx=h%ht->capacity;
-    hashtable_entry_t *e=ht->entries[idx];
-    while (e!=NULL) {
-        if (ht->equals(e->key,key)) {
-            e->value=value;
-            return;
-        }
-        e=e->next;
-    }
-    /* conditionally grow */
-    hashtable_grow(ht);
-
-    e=(hashtable_entry_t*)calloc(1,sizeof(hashtable_entry_t));
-    e->key=key;
-    e->value=value;
-    e->next=ht->entries[idx];
-
-    ht->entries[idx]=e;
-    ht->size++;
+    return HASH_COUNT(ht);
 }
 /* initial vo-aid-------------------------------------------------------------*/
 extern void initvoaid(insopt_t *opt)
 {
     trace(3,"initvoaid:\n");
+
+    opt->voopt.match.f =opt->voopt.calib.f;
+    opt->voopt.match.fu=opt->voopt.calib.fu;
+    opt->voopt.match.fv=opt->voopt.calib.fv;
+
+    opt->voopt.match.cu=opt->voopt.calib.cu;
+    opt->voopt.match.cv=opt->voopt.calib.cv;
 
     init_match(&matchs,&opt->voopt.match);
 
@@ -262,7 +150,7 @@ extern void freevoaid()
     if (vofilt.Px) free(vofilt.Px);
 
     for (i=0;i<vofilt.n;i++) {
-        hashtable_destroy(vofilt.data[i].trackfeat);
+        hash_destroy(&vofilt.data[i].trackfeat);
     }
     if (vofilt.data) free(vofilt.data);
     return;
@@ -276,12 +164,9 @@ extern void freevoaid()
 extern int resize(double **A,int m,int n,int p,int q)
 {
     trace(3,"resize:\n");
-    int i,j;
     double *Ap=zeros(p,q);
 
-    for (i=0;i<MIN(p,m);i++) {
-        for (j=0;j<MIN(n,q);j++) Ap[i+j*p]=(*A)[i+j*n];
-    }
+    matcpy(Ap,*A,m,n);
     free(*A); *A=Ap;
     return 1;
 }
@@ -292,7 +177,6 @@ static void campose(const insstate_t *ins,const insopt_t *opt,cams_t *cams,
     double T[3],we[3]={0,0,-OMGE},web[3];
     double W[9],W1[9],W2[9];
     int i,j;
-
     static double I[9]={1,0,0,0,1,0,0,0,1};
 
     static int ip=xiP(opt),ia=xiA(opt),ilc=xiCl (opt);
@@ -328,20 +212,15 @@ static void campose(const insstate_t *ins,const insopt_t *opt,cams_t *cams,
 
         /* jacobians wrt. attitude */
         for (i=0;i<3;i++) {
-            for (j=ia;j<na+ia;j++) Jp[i+j*ins->nx]=W[i+(j-ia)*3];
+            for (j=ia;j<na+ia;j++) Jp[i+j*3]=W[i+(j-ia)*3];
         }
         /* jacobians wrt. ins position */
         for (i=0;i<3;i++) {
-            for (j=ip;j<np+ip;j++) Jp[i+j*ins->nx]=I[i+(j-ip)*3];
+            for (j=ip;j<np+ip;j++) Jp[i+j*3]=I[i+(j-ip)*3];
         }
         /* jacobians wrt. camera lever arm  */
         if (opt->estcaml) {
-
-            for (i=0;i<3;i++) {
-                for (j=ilc;j<ilc+nlc;j++) {
-                    Jp[i+j*ins->nx]=ins->Cbe[i+(j-ilc)*3];
-                }
-            }
+            for (i=0;i<3;i++) for (j=ilc;j<ilc+nlc;j++) Jp[i+j*3]=ins->Cbe[i+(j-ilc)*3];
         }
         trace(3,"Jp=\n");
         tracemat(3,Jp,3,ins->nx,12,6);
@@ -349,9 +228,8 @@ static void campose(const insstate_t *ins,const insopt_t *opt,cams_t *cams,
     /* jacobian for camera attitude */
     if (Ja) {
         for (i=0;i<3;i++) for (j=ia;j<ia+na;j++) {
-                Ja[i+j*ins->nx]=I[i+(j-ia)*3];
+                Ja[i+j*3]=I[i+(j-ia)*3];
             }
-
         trace(3,"Ja=\n");
         tracemat(3,Ja,3,ins->nx,12,6);
     }
@@ -369,26 +247,26 @@ static void campose(const insstate_t *ins,const insopt_t *opt,cams_t *cams,
         skewsym3(T,W1);
         matmul("NN",3,3,3,1.0,W1,Omge,0.0,W2);
 
-        /* wrt. attitude error states */
+        /* wrt. attitude error state */
         for (i=0;i<3;i++) {
-            for (j=ia;j<ia+na;j++) Jv[i+j*ins->nx]=W[i+(j-ia)*3]+W2[i+(j-ia)*3];
+            for (j=ia;j<ia+na;j++) Jv[i+j*3]=W[i+(j-ia)*3]+W2[i+(j-ia)*3];
         }
         /* wrt. velocity */
         for (i=0;i<3;i++) {
-            for (j=iv;j<iv+nv;j++) Jv[i+j*ins->nx]=I[i+(j-iv)*3];
+            for (j=iv;j<iv+nv;j++) Jv[i+j*3]=I[i+(j-iv)*3];
         }
         /* wrt. bg */
         skewsym3(ins->lbc,W);
         matmul("NN",3,3,3,-1.0,ins->Cbe,W,0.0,W1);
         for (i=0;i<3;i++) {
-            for (j=ibg;j<ibg+nbg;j++) Jv[i+j*ins->nx]=W1[i+(j-ibg)*3];
+            for (j=ibg;j<ibg+nbg;j++) Jv[i+j*3]=W1[i+(j-ibg)*3];
         }
         /* wrt. camera lever arm */
         if (opt->estcaml) {
             skewsym3(web,W);
             matmul("NN",3,3,3,1.0,ins->Cbe,W,0.0,W1);
             for (i=0;i<3;i++) {
-                for (j=ilc;j<ilc+nlc;j++) Jv[i+j*ins->nx]=W1[i+(j-ilc)*3];
+                for (j=ilc;j<ilc+nlc;j++) Jv[i+j*3]=W1[i+(j-ilc)*3];
             }
         }
         trace(3,"Jv=\n");
@@ -406,7 +284,7 @@ static int addinstat(vofilt_t *filt,const insstate_t *in,const insopt_t *opt,
     campose(in,opt,&cams,NULL,NULL,NULL);
 
     /* create hash table */
-    cams.trackfeat=hashtable_create(NULL);
+    cams.trackfeat=hashtable();
     cams.find=cur_fid;
 
     /* add ins states */
@@ -437,12 +315,19 @@ static int propagate(vofilt_t *filt,const insstate_t *ins)
     int i,j,nx=filt->nx;
     double *T,*Pp;
 
-    trace(3,"propagate:\n");
+    trace(3,"propagate: nx=%d\n",filt->nx);
 
+    if (filt->n==0||filt->nx==ins->nx) {
+        for (i=0;i<nx;i++) for (j=0;j<nx;j++) filt->Px[i+j*nx]=ins->P[i+j*nx];
+        return 1;
+    }
     Pp=mat(nx,nx); T=mat(nx,nx);
     for (i=0;i<nx-ins->nx;i++) {
         for (j=0;j<ins->nx;j++) T[i+j*(nx-ins->nx)]=filt->Px[ins->nx+i+j*nx];
     }
+    trace(3,"P(0)=\n");
+    tracemat(3,filt->Px,filt->nx,filt->nx,12,8);
+
     matmul("NT",nx-ins->nx,ins->nx,ins->nx,1.0,T,ins->F,0.0,Pp);
     for (i=0;i<nx-ins->nx;i++) {
         for (j=0;j<ins->nx;j++) {
@@ -450,8 +335,13 @@ static int propagate(vofilt_t *filt,const insstate_t *ins)
         }
     }
     for (i=0;i<ins->nx;i++) {
-        for (j=0;j<ins->nx;j++) filt->Px[i+j*nx]=ins->P[i+j*ins->nx];
+        for (j=0;j<ins->nx;j++) {
+            filt->Px[i+j*nx]=ins->P[i+j*ins->nx];
+        }
     }
+    trace(3,"P(1)=\n");
+    tracemat(3,filt->Px,filt->nx,filt->nx,12,8);
+
     free(T); free(Pp);
     return 1;
 }
@@ -461,17 +351,20 @@ static void augstates(vofilt_t *filt,const insstate_t *ins,const insopt_t *opt,
 {
     double *J,*Jp,*Jv,*Ja,*P,*I;
     int i,j,nx=ins->nx;
-    int nxp=filt->nx,nxc=filt->nx+9,nxm=filt->nmax*9+ins->nx;
+    int nxp=filt->nx,nxc=filt->nx+9;
 
     trace(3,"augstates:\n");
 
+    /* first camera state */
+    if (filt->n==0||filt->nx==ins->nx) {
+        for (i=0;i<nx;i++) for (j=0;j<nx;j++) filt->Px[i+j*nx]=ins->P[i+j*nx];
+    }
     /* add a camera pose to sliding window */
-    if (addinstat(filt,ins,opt,cur_fid)<0||nxc>=nxm) {
+    if (addinstat(filt,ins,opt,cur_fid)<0) {
         trace(2,"add camera pose fail\n");
         return;
     }
-    Jp=mat(3,nx); Jv=mat(3,nx); Ja=mat(3,nx); P=mat(nxc,nxc);
-
+    Jp=zeros(3,nx); Jv=zeros(3,nx); Ja=zeros(3,nx); P=zeros(nxc,nxc);
     J=zeros(nxc,nxp); I=eye(nxp);
 
     /* jacobians */
@@ -487,7 +380,10 @@ static void augstates(vofilt_t *filt,const insstate_t *ins,const insopt_t *opt,
     trace(3,"J=\n");
     tracemat(3,J,nxc,nxp,12,6);
 
-    trace(3,"P=\n");
+    trace(3,"P(0)=\n");
+    tracemat(3,filt->Px,nxp,nxp,12,6);
+
+    trace(3,"P(1)=\n");
     tracemat(3,P,nxc,nxc,12,6);
     
     /* augment covariance matrix */
@@ -526,8 +422,8 @@ static int rmcamera(vofilt_t *filt,const insopt_t *opt)
     trace(3,"rmcamera:\n");
 
     for (i=0;i<filt->n;i++) {
-        if (hashtable_size(filt->data[i].trackfeat)||filt->data[i].flag!=2) continue;
-        hashtable_destroy(filt->data[i].trackfeat);
+        if (hash_counts(filt->data[i].trackfeat)||filt->data[i].flag!=2) continue;
+        hash_destroy(&filt->data[i].trackfeat);
 
         /* remove camera */
         if (handlerm(filt,opt,i)!=filt->n) continue;
@@ -551,39 +447,53 @@ static int updatetrack(const insopt_t *opt,const img_t *img)
     }
     return 1;
 }
-/* update current camera-frame track data-------------------------------------*/
-static int updatecamtrack(const insopt_t *opt,gtime_t time,int find)
+/* add current tracking feature points to current camera----------------------*/
+static int addcurrenttrack(cams_t *cam)
 {
-    const void *key,*val;
-    cams_t *pcam=NULL;
-    int i;
-
-    trace(3,"updatecamtrack:\n");
-
-    for (i=0;i<vofilt.n;i++) {
-        if (vofilt.data[i].find==find) {pcam=&vofilt.data[i]; break;}
-    }
-    if (pcam==NULL) return 0;
+    int i,j;
 
     trace(3,"add new tracks: %d\n",tracks.nnew);
     trace(3,"update tracks: %d\n",tracks.nupd);
 
     /* add new track to camera tracking-feature list */
     for (i=0;i<tracks.nnew;i++) {
-        key=&tracks.data[tracks.newtrack[i]].name[0];
-        val=&tracks.data[tracks.newtrack[i]];
-
-        hashtable_put(pcam->trackfeat,key,val);
+        j=tracks.newtrack[i];
+        hash_add_feature(&cam->trackfeat,tracks.data[j].uid,&tracks.data[j]);
     }
     /* update old track */
     for (i=0;i<tracks.nupd;i++) {
-
-        key=&tracks.data[tracks.updtrack[i]].name[0];
-        val=&tracks.data[tracks.updtrack[i]];
-
-        hashtable_put(pcam->trackfeat,key,val);
+        j=tracks.updtrack[i];
+        hash_add_feature(&cam->trackfeat,tracks.data[j].uid,
+                         &tracks.data[j]);
     }
-    return 1;
+    return tracks.nnew||tracks.nupd;
+}
+/* get camera pointer through given `uid'-------------------------------------*/
+static cams_t* getcampointor(int uid)
+{
+    cams_t *pcam=NULL;
+    int i;
+    for (i=0;i<vofilt.n;i++) {
+        if (vofilt.data[i].find==uid) {pcam=&vofilt.data[i]; break;}
+    }
+    return pcam;
+}
+/* update current camera-frame track data-------------------------------------*/
+static int updatecamtrack(const insopt_t *opt,gtime_t time,int pre_id,int cur_ind)
+{
+    cams_t *cam;
+    trace(3,"updatecamtrack: \n");
+
+    if ((cam=getcampointor(pre_id))&&hash_counts(cam->trackfeat)==0) {
+
+        /* if no matched feature of precious camera
+         * then we fill in with current tracks
+         * */
+        addcurrenttrack(cam);
+    }
+    /* add current track features */
+    if ((cam=getcampointor(cur_ind))&&addcurrenttrack(cam)) return 1;
+    return 0;
 }
 /* distort feature point------------------------------------------------------*/
 static void distortfeat(const insstate_t *ins,const double *pfn,double *pfnd)
@@ -714,7 +624,7 @@ static int findallcam(const trackd_t *feat,const insopt_t *opt,gtime_t time,
 {
     int i,k,j;
     for (i=0,k=0;i<vofilt.n;i++) {
-        if (!hashtable_get(vofilt.data[i].trackfeat,feat->name)) continue;
+        if (!hash_find_feature(vofilt.data[i].trackfeat,feat->uid)) continue;
         index[k++]=i;
     }
     for (i=0;i<feat->n;i++) for (j=0;j<k;j++) {
@@ -733,30 +643,45 @@ static void getK(const insstate_t *ins,double *K)
     K[6]=ins->ox; K[7]=ins->oy;
     K[8]=1.0;
 }
+/* rotation parameters and translation parameters convert to transformation---
+ * arg   : double *R  I  rotation matrix
+ *         double *t  I  translation matrix
+ *         double *T  O  transformation matrix
+ * return: none
+ * --------------------------------------------------------------------------*/
+extern void rt2tf(const double *R,const double *t,double *T)
+{
+    setzero(T,4,4);
+    T[0]=R[0]; T[4]=R[3]; T[ 8]=R[6]; T[12]=t[0];
+    T[1]=R[1]; T[5]=R[4]; T[ 9]=R[7]; T[13]=t[1];
+    T[2]=R[2]; T[6]=R[5]; T[10]=R[8]; T[14]=t[2]; T[15]=1.0;
+}
+/* transform matrix convert to rotation and translation parameters-----------*/
+extern void tf2rt(const double *T,double *R,double *t)
+{
+    seteye(R,3); setzero(t,1,3);
+    R[0]=T[0 ]; R[3]=T[4 ]; R[6]=T[8 ];
+    R[1]=T[1 ]; R[4]=T[5 ]; R[7]=T[9 ];
+    R[2]=T[2 ]; R[5]=T[6 ]; R[8]=T[10];
+    t[0]=T[12]; t[1]=T[13]; t[2]=T[14];
+}
 /* compute relative transformation between two frame -------------------------*/
-static void reltf(gtime_t t1,gtime_t t2,cams_t *cam1,cams_t *cam2,
+static void reltf(gtime_t ts,gtime_t te,cams_t *cam1,cams_t *cam2,
                   double *C,double *t)
 {
-    double dt,Ce[9],*pC1,*pC2,dr[3];
-    int i;
+    double dT[16],T1[16],T2[16];
 
-    dt=timediff(t2,t1);
+    rt2tf(cam1->Cce,cam1->re,T1);
+    rt2tf(cam2->Cce,cam2->re,T2);
 
-    seteye(Ce,3);
-    Ce[0]=cos(OMGE*dt); Ce[3]=-sin(OMGE*dt);
-    Ce[1]=sin(OMGE*dt); Ce[4]= cos(OMGE*dt);
-    Ce[8]=1.0;
-
-    pC1=cam1->Cce;
-    pC2=cam2->Cce;
-    if (C) {
-        matmul33("TNN",pC1,Ce,pC2,3,3,3,3,C);
+    if (!matinv(T1,4)) {
+        matmul("NN",4,4,4,1.0,T1,T2,0.0,dT);
     }
-    matmul3v("N",Ce,cam2->re,t);
-    for (i=0;i<3;i++) {
-        dr[i]=t[i]-cam1->re[i];
+    else {
+        seteye(dT,4);
     }
-    if (t) matmul3v("T",pC1,dr,t);
+    if (matinv(dT,4)) seteye(dT,4);
+    tf2rt(dT,C,t); 
 }
 /* estimate feature point position in ecef------------------------------------*/
 static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
@@ -764,7 +689,7 @@ static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
 {
     int k;
     static double C[9],t[3],uv1[2],uv2[2];
-    double K[9];
+    double K[9]={0};
     cams_t *cam1,*cam2;
 
     trace(3,"estfeatpos:\n");
@@ -773,7 +698,7 @@ static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
         trace(2,"no found camera observed this feature\n");
         return 0;
     }
-    if (k<MAX_TRACK_LEN) return 0;
+    if (k<MIN_TRACK_LEN) return 0;
 
     /* relative transformation */
     cam1=&vofilt.data[index[  0]];
@@ -1149,7 +1074,7 @@ static int updatefeatmeas(const insopt_t *opt,insstate_t *ins,gtime_t time)
 #endif
         /* remove feature */
         for (j=0;j<ki;j++) {
-            hashtable_remove(vofilt.data[index[i]].trackfeat,tracks.data[i].name);
+            hash_delete_feature(&vofilt.data[index[i]].trackfeat,tracks.data[i].uid);
         }
         tracks.data[i].last_idx=-1;
         if (flag==0) continue;
@@ -1185,13 +1110,14 @@ static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
         trace(2,"match feature points fail\n");
         return 0;
     }
-    /* update track data */
+    /* update all track data */
     if (!updatetrack(opt,img)) return 0;
-    if (!updatecamtrack(opt,img->time,img->id)) return 0;
+    if (!updatecamtrack(opt,img->time,matchs.Ip.id,img->id)) return 0;
 
     /* update camera/ins states */
     updatefeatmeas(opt,ins,img->time);
 
+    /* remove redundant camera */
     rmcamera(&vofilt,opt);
     return 1;
 }
@@ -1207,11 +1133,11 @@ static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
 extern int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
                    const img_t *img,int flag)
 {
-    trace(3,"voigpos: time=%s\n",time_str(img->time,4));
+    trace(3,"voigpos: time=%s\n",time_str(imu->time,4));
 
     switch (flag) {
         case 0: return propagate(&vofilt,ins); 
-        case 1: return updateall(ins,opt,img);
+        case 1: return propagate(&vofilt,ins)&&updateall(ins,opt,img);
     }
     return 0;
 }

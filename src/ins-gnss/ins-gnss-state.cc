@@ -116,8 +116,8 @@ extern int xnRx(const insopt_t *opt)
 {
     return (xnP (opt)+xnV (opt)+xnA (opt)+xnBa(opt)+xnBg(opt)+xnDt(opt)+xnSg(opt)+
             xnSa(opt)+xnRg(opt)+xnRa(opt)+xnLa(opt)+xnOs(opt)+xnOl(opt)+xnOa(opt)+
-            xnCm(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+xnI (opt)+xnT (opt)+xnL (opt)+
-            xnD (opt));
+            xnCm(opt)+xnCla(opt)+xnCfo(opt)+xnCkp(opt)+xnVm(opt)+xnRc(opt)+xnRr(opt)+
+            xnI (opt)+xnT(opt)+xnL(opt)+xnD(opt));
 }
 /* get number of all states--------------------------------------------------*/
 extern int xnX(const insopt_t *opt) {return xnRx(opt)+xnB(opt);}
