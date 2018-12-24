@@ -66,7 +66,7 @@ extern void drawtrack(const track_t *track,const voopt_t *opt)
             cv::circle(outImage,point,2,cv::Scalar(0,0,255),1);
             cv::circle(outImage,point,8,cv::Scalar(0,0,255),1);
 
-            sprintf(allName[j],"image_%ld_%d",track->data[i].uid,track->data[i].first_frame+j);
+            sprintf(allName[j],"image_%d_%d",track->data[i].uid,track->data[i].first_frame+j);
             cv::namedWindow(allName[j],CV_WINDOW_AUTOSIZE);
             cv::imshow(allName[j],outImage);                                                                                                                                  
             cv::waitKey(0);                                                                                                                                                     
@@ -74,6 +74,38 @@ extern void drawtrack(const track_t *track,const voopt_t *opt)
         for (j=0;j<track->data[i].n;j++) {
             cv::destroyWindow(allName[j]);
         }
+    }
+}
+/* draw tracks-----------------------------------------------------------------
+ * args:    trackd_t *track  I  tracking data
+ *          voopt_t *opt     I  options
+ * return: none
+ * ---------------------------------------------------------------------------*/
+extern void drawtrackd(const trackd_t *track,const voopt_t *opt)
+{
+    static int first=1;
+    int j;
+
+    trace(3,"drawtrackd: n=%d\n",track->n);
+
+    if (first) {
+        cv::namedWindow("Match-Image",CV_WINDOW_AUTOSIZE);
+        first=0;
+    }
+    /* for each track. */
+    for (j=0;j<track->n;j++) {
+
+        cv::Mat outImage(track->I[j].h,track->I[j].w,CV_8UC3);
+        img2Img(&track->I[j],outImage);
+
+        cv::Point point;
+        point.x=(int)track->data[j].u;
+        point.y=(int)track->data[j].v;
+
+        cv::circle(outImage,point,2,cv::Scalar(0,0,255),1);
+        cv::circle(outImage,point,8,cv::Scalar(0,0,255),1);
+        cv::imshow("Match-Image",outImage);
+        cv::waitKey(0);
     }
 }
 /* display image-------------------------------------------------------------*/

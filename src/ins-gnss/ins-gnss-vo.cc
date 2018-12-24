@@ -29,7 +29,6 @@
  * history : 2018/12/02 1.0 new
  *-----------------------------------------------------------------------------*/
 #include "carvig.h"
-#include "hash-table.h"
 
 /* constants-------------------------------------------------------------------*/
 #define MIN_TRACK_LEN               2         /* min length of tracking data */
@@ -666,7 +665,7 @@ extern void tf2rt(const double *T,double *R,double *t)
     t[0]=T[12]; t[1]=T[13]; t[2]=T[14];
 }
 /* compute relative transformation between two frame -------------------------*/
-static void reltf(gtime_t ts,gtime_t te,cams_t *cam1,cams_t *cam2,
+static void reltf(gtime_t ts,gtime_t te,const cams_t *cam1,const cams_t *cam2,
                   double *C,double *t)
 {
     double dT[16],T1[16],T2[16];
@@ -683,14 +682,62 @@ static void reltf(gtime_t ts,gtime_t te,cams_t *cam1,cams_t *cam2,
     if (matinv(dT,4)) seteye(dT,4);
     tf2rt(dT,C,t); 
 }
+/* compute camera project matrix----------------------------------------------*/
+static int prjmatrix(const double *C,const double *t,const double *K,double *P)
+{
+    double T[16],M[12];
+    int i,j;
+
+    rt2tf(C,t,T);
+    for (i=0;i<3;i++) for (j=0;j<4;j++) M[i+j*3]=T[i+j*4];
+    matmul("NN",3,4,3,1.0,K,M,0.0,P);
+    return 1;
+}
+/* initial feature point position in ecef-------------------------------------*/
+static int initfeatpos(const cams_t *cam1,const cams_t *cam2,const double *uv1,
+                       const double *uv2,const double *K,double *pf)
+{
+    double C[9],t[3],P1[12],P2[12];
+    double J[16],U[16],W[16],V[16];
+    int j;
+
+    /* relative camera transformation */
+    reltf(cam1->time,cam2->time,cam1,cam2,C,t);
+
+    tracemat(3,C,3,3,12,6);
+    tracemat(3,t,1,3,12,3);
+
+    /* camera project matrix */
+    prjmatrix(C,t,K,P2); seteye(C,3); setzero(t,1,3);
+    prjmatrix(C,t,K,P1);
+
+    for (j=0;j<4;j++) {
+        J[0+4*j]=P1[2+3*j]*uv1[0]-P1[0+3*j];
+        J[1+4*j]=P1[2+3*j]*uv1[1]-P1[1+3*j];
+        J[2+4*j]=P2[2+3*j]*uv2[0]-P2[0+3*j];
+        J[3+4*j]=P2[2+3*j]*uv2[1]-P2[1+3*j];
+    }
+    tracemat(3,J,4,4,12,6);
+    if (!svd(J,4,4,U,W,V)) {
+        trace(2,"Jacobians svd fail\n");
+        return 0;
+    }
+    /* return false if this point is at infinity */
+    if (fabs(V[3+3*4])<1E-10) {
+        trace(2,"feature point is at infinity\n");
+        return 0;
+    }
+    for (j=0;j<3;j++) pf[j]=V[j+3*4]/V[3+3*4];
+    return 1;
+}
 /* estimate feature point position in ecef------------------------------------*/
 static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
                       gtime_t time,int *index,double *pf)
 {
-    int k;
-    static double C[9],t[3],uv1[2],uv2[2];
+    static double uv1[2],uv2[2];
     double K[9]={0};
     cams_t *cam1,*cam2;
+    int k;
 
     trace(3,"estfeatpos:\n");
 
@@ -700,32 +747,32 @@ static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
     }
     if (k<MIN_TRACK_LEN) return 0;
 
-    /* relative transformation */
+    /* camera pointer */
     cam1=&vofilt.data[index[  0]];
     cam2=&vofilt.data[index[k-1]];
-    if (cam1&&cam2) {
-        reltf(feat->ts,feat->te,cam1,cam2,C,t);
-    }
-    else {
-        return 0;
-    }
+    
     /* feature point measurement data */
     uv1[0]=feat->data[        0].u; uv1[1]=feat->data[0].v;
     uv2[0]=feat->data[feat->n-1].u;
     uv2[1]=feat->data[feat->n-1].v;
     getK(ins,K);
-
-    /* triangulate feature 3D-point */
-    if (!triangulate3D(C,t,uv1,uv2,K,pf)) { 
-        trace(2,"estimate position fail\n");
+    
+#if 1
+    /* draw track feature for debug */
+    drawtrackd(feat,&opt->voopt);
+#endif
+    /* initial feature point position */
+    if (!initfeatpos(cam1,cam2,uv1,uv2,K,pf)) {
+        trace(2,"initial feature position fail\n");
         return 0;
     }
+    
     return k;
 }
 /* get feature point measurement data-----------------------------------------*/
 static int getfeatmeas(const feature *feat,const insstate_t *ins,double *pfn)
 {
-    double uv[2],K[9],pf[3];
+    double uv[3],K[9]={0},pf[3];
     cam_t cam;
 
     /* camera calibration parameters */
@@ -850,9 +897,7 @@ static int calcgnposest(trackd_t *feat,const insopt_t *opt,const insstate_t *ins
     if (!(k=estfeatpos(feat,opt,ins,time,index,pf))) return 0;
 
     /* re-parameter for feature position */
-    x[0]=pf[0]/pf[2];
-    x[1]=pf[1]/pf[2];
-    x[2]=  1.0/pf[2];
+    for (i=0;i<3;i++) x[i]=pf[i]/pf[2];
 
     for (i=0;i<MAXITER;i++) {
 

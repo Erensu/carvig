@@ -604,7 +604,7 @@ extern int triangulate3D(const double *C21,const double *t12_1,
     flag=triangulate(&frame,K,C21,t12_1,Xp);
 
     /* normalize 3D points */
-    for (i=0;i<4;i++) X[i]=Xp[i]/Xp[3];
+    for (i=0;i<3;i++) X[i]=Xp[i]/Xp[3];
 
     freeframe(&frame);
     return flag&&X[2]>0.0;

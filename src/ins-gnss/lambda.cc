@@ -7,6 +7,8 @@
 *         1995
 *     [2] X.-W.Chang, X.Yang, T.Zhou, MLAMBDA: A modified LAMBDA method for
 *         integer least-squares estimation, J.Geodesy, Vol.79, 552-565, 2005
+*     [3] Paul de Jonge, Christian Tiberius. The LAMBDA method for integer
+*         ambiguity estimation: implementation aspects
 *
 * version : $Revision: 1.1 $ $Date: 2008/07/17 21:48:06 $
 * history : 2007/01/13 1.0 new
@@ -253,5 +255,198 @@ extern int lambda_search(int n, int m, const double *a, const double *Q,
     info=search(n,m,L,D,a,F,s);
     
     free(L); free(D);
+    return info;
+}
+/*---------------------------------------------------------------------------*/
+static int exctract_L(const double *L,int k,double *LL,int m,int n)
+{
+    int i;
+    for (i=0;i<n;i++) LL[i]=L[m-1+k*i]; return n;
+}
+/* compute the bootstrapped success rate ------------------------------------*/
+static double amb_bs_success(const double *D,int n)
+{
+    double s=1.0;
+    int i; for (i=0;i<n;i++) s*=(2.0*norm_distri(0.5/SQRT(D[i]))-1.0);
+    return s;
+}
+/* bootstrap search ambiguity ------------------------------------------------
+ * args   : int    n      I  number of float parameters
+ *          double *a     I  float parameters (n x 1)
+ *          double *Q     I  covariance matrix of float parameters (n x n)
+ *          double *F     O  fixed solutions (n x m)
+ *          double *s     O  sum of squared residulas of fixed solutions (1 x m)
+ *          double *Ps    O  success ratio
+ * return : status (0:ok,other:error)
+ * ---------------------------------------------------------------------------*/
+extern int bootstrap(int n,const double *a, const double *Q, double *F,double *Ps)
+{
+    double *L,*D,*Z,*an,*ZT;
+    double *af,*afc,*S,*zhat,*LL;
+    int i,j,k,info;
+
+    if (n<=0) return -1;
+
+    L=zeros(n,n); D=mat(n,1); Z=eye(n);
+
+    /* LD factorization */
+    if ((info=LD(n,Q,L,D))) {
+        free(L); free(D); free(Z); return info;
+    }
+    /* lambda reduction */
+    reduction(n,L,D,Z);
+
+    if (Ps) *Ps=amb_bs_success(D,n);
+
+    zhat=mat(n,1);
+    an=mat(n,1);
+    ZT=mat(n,n);
+
+    for (i=0;i<n;i++) an[i]=a[i]-int(a[i]);
+
+    matmul("TN",n,1,n,1.0,Z,an,0.0,zhat); /* z=Z'*a */
+
+    af=zeros(n,1); afc=zeros(n,1);
+    S=zeros(n,1); LL=mat(n,1);
+
+    afc[n-1]=zhat[n-1]; af[n-1]=ROUND(afc[n-1]);
+
+    for (i=n-1;i>0;i--) {
+        j=exctract_L(L,n,LL,i+1,i);
+
+        for (k=0;k<j;k++) S[k]=S[k]+(af[j]-afc[j])*LL[k];
+        afc[j-1]=zhat[j-1]+S[j-1];
+        af[j-1]=ROUND(afc[j-1]);
+    }
+
+    for (i=0;i<n;i++) {
+        for (j=0;j<n;j++) ZT[i+j*n]=Z[j+i*n];
+    }
+    if (!(info=matinv(ZT,n))) {
+        matmul("NN",n,1,n,1.0,ZT,af,0.0,F);
+        for (i=0;i<n;i++) F[i]+=int(a[i]);
+    }
+    free(L); free(D); free(Z);
+    free(af); free(afc);
+    free(S); free(LL);
+    return info;
+}
+/*---------------------------------------------------------------------------*/
+static int exctract_vec(const double *D,int n,int k,double *Do)
+{
+    int i,j; for (i=k-1,j=0;i<n;i++) Do[j++]=D[i]; return j;
+}
+/*---------------------------------------------------------------------------*/
+static void exctract_mat(const double *A,int r,int c,int a1,int b1,
+                         int a2,int b2,double *Ao)
+{
+    int i,j,rs,re,cs,ce,nr,nc;
+
+    rs=MIN(a1,a2); re=MAX(a1,a2);
+    cs=MIN(b1,b2); ce=MAX(b1,b2);
+    nr=re-rs+1; nc=ce-cs+1;
+
+    for (i=0;i<nc;i++) {
+        for (j=0;j<nr;j++) Ao[i*nr+j]=A[(cs-1+i)*r+rs-1+j];
+    }
+}
+/*---------------------------------------------------------------------------*/
+static int parsearch(const double *zhat,const double *Qzhat,const double *Z,
+                     const double *L,const double *D,double P0,int n,int m,
+                     double *F,double*s)
+{
+    int i,j,k=1,info=0,l;
+    double ps,*DD,*zz,*LL,*Qzpar,*QP,*zpar;
+
+    ps=amb_bs_success(D,n);
+    DD=mat(1,n); zz=mat(1,n); LL=mat(n,n);
+
+    while(ps<P0&&k<n) {
+        k=k+1;
+        j=exctract_vec(D,n,k,DD);
+        ps=amb_bs_success(DD,j);
+    }
+    Qzpar=mat(n,n); QP=mat(n,n);
+    zpar =mat(m,n);
+
+    if (ps>P0) {
+        if (k==1) {
+            search(n,m,L,D,zhat,F,s); 
+        }
+        else {
+            exctract_vec(zhat,n,k,zz); exctract_vec(D,n,k,DD);
+
+            exctract_mat(L,n,n,k,k,n,n,LL);
+
+            search(n-k+1,m,LL,DD,zz,zpar,s);
+
+            exctract_mat(Qzhat,n,n,k,k,n,n,Qzpar);
+            exctract_mat(Qzhat,n,n,k-1,k,1,n,LL);
+
+            if (!(info=matinv(Qzpar,n-k+1))) {
+                matmul("NN",k-1,n-k+1,n-k+1,1.0,LL,Qzpar,0.0,QP);
+
+                for (i=0;i<m;i++) {
+                    for (j=0;j<n-k+1;j++) {
+                        DD[j]=zz[j]-zpar[i*(n-k+1)+j];
+                    }
+                    matmul("NN",k-1,1,n-k+1,1.0,QP,DD,0.0,LL);
+                    for (j=0;j<k-1;j++) {
+                        F[i*n+j]=ROUND(zhat[j]-LL[j]);
+                    }
+                    for (j=k-1,l=0;j<n;j++) {
+                        F[i*n+j]=zpar[i*(n-k+1)+l++];
+                    }
+                }
+            }
+        }
+    }
+    free(DD); free(LL); free(zz);
+    free(Qzpar); free(QP);
+    free(zpar);
+    return info;
+}
+/* partial ambiguity search---------------------------------------------------
+ * args   : int    n      I  number of float parameters
+ *          double *a     I  float parameters (n x 1)
+ *          double *Q     I  covariance matrix of float parameters (n x n)
+ *          double *F     O  fixed solutions (n x m)
+ *          double *s     O  sum of squared residuals of fixed solutions (1 x m)
+ *          double *p0    O  success ratio
+ * return : status (0:ok,other:error)
+ * --------------------------------------------------------------------------*/
+extern int plambda(const double *a,const double *Qa,int n,int m,double *F,
+                   double *s,double p0)
+{
+    double *L,*D,*Z,*zhat,*Qz,*Q,*E;
+    int info;
+
+    trace(3,"par_lambda:\n");
+
+    if (n<=0) return -1;
+
+    L=zeros(n,n); D=mat(n,1); Z=eye(n); E=mat(m,n);
+
+    /* LD factorization */
+    if ((info=LD(n,Qa,L,D))) {
+        free(L); free(D); free(Z); return info;
+    }
+    /* lambda reduction */
+    reduction(n,L,D,Z);
+
+    zhat=mat(n,1);
+    Qz=mat(n,n); Q=mat(n,n);
+
+    matmul("TN",n,1,n,1.0,Z,a,0.0,zhat); /* z=Z'*a */
+    matmul("TN",n,n,n,1.0,Z,Qa,0.0,Q);
+    matmul("NN",n,n,n,1.0,Q,Z,0.0,Qz); /* Qz=Z'*Qa*Z */
+
+    parsearch(zhat,Qz,Z,L,D,p0,n,m,E,s);
+
+    info=solve("T",Z,E,n,m,F); /* F=Z'\E */
+
+    free(L); free(D); free(Z);
+    free(zhat); free(Qz); free(Q);
+    free(E);
     return info;
 }

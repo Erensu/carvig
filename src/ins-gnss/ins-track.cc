@@ -18,7 +18,6 @@
  * history : 2018/10/25 1.0 new
  *-----------------------------------------------------------------------------*/
 #include "carvig.h"
-#include "hash-table.h"
 
 /* constants------------------------------------------------------------------*/
 #define REFINE                 1         /* tracking refine feature points */

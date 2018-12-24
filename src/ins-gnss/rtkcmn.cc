@@ -1793,6 +1793,20 @@ extern double stds(const double *val,int n)
     
     std=sqrt(dot(vv,vv,n)/n); free(vv); return std;
 }
+/* normal distribution functional -------------------------------------------*/
+extern double norm_distri(const double u)
+{
+    if(u<-5.0) return 0.0;
+    if(u>5.0) return 1.0;
+
+    double y=fabs(u)/sqrt(2.0);
+
+    double p=1.0+y*(0.0705230784+y*(0.0422820123+y*(0.0092705272+
+                 y*(0.0001520143+y*(0.0002765672+y*0.0000430638)))));
+    double er =1- pow( p, -16.0 );
+    p=(u<0.0)? 0.5-0.5*er: 0.5+0.5*er;
+    return p;
+}
 extern double re_norm(double p)
 {
     if(p==0.5) return 0.0;

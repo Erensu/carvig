@@ -24,6 +24,8 @@
 #include <unistd.h>
 #include <malloc.h>
 
+#include <structure/uthash.h>
+
 /* define fixed-width datatypes for Visual Studio projects */
 #if defined(_MSC_VER)&&(_MSC_VER<1600)
 typedef __int8            int8_t;
@@ -2378,6 +2380,7 @@ EXPORT int mateigenvalue(const double* A,int n,double *u,double *v);
 EXPORT int matdet(const double*A,int n,double*det);
 EXPORT double det(const double *A,int n);
 EXPORT double stds(const double *val,int n);
+EXPORT double norm_distri(const double u);
 EXPORT double re_norm(double p);
 EXPORT void add_fatal(fatalfunc_t *func);
 EXPORT double** dmat(int m,int n);
@@ -2795,7 +2798,9 @@ EXPORT int lambda(int n, int m, const double *a, const double *Q, double *F,
 EXPORT int lambda_reduction(int n, const double *Q, double *Z);
 EXPORT int lambda_search(int n, int m, const double *a, const double *Q,
                          double *F, double *s);
-
+EXPORT int bootstrap(int n,const double *a, const double *Q, double *F,double *Ps);
+EXPORT int plambda(const double *a,const double *Qa,int n,int m,double *F,
+                   double *s,double p0);
 /* standard positioning ------------------------------------------------------*/
 EXPORT int pntpos(const obsd_t *obs, int n, const nav_t *nav,
                   const prcopt_t *opt, sol_t *sol, insstate_t *ins,double *azel,
@@ -3212,6 +3217,7 @@ EXPORT int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
                        const voopt_t *opt,track_t *track);
 EXPORT int inittrack(trackd_t *data,const voopt_t *opt);
 EXPORT void drawtrack(const track_t *track,const voopt_t *opt);
+EXPORT void drawtrackd(const trackd_t *track,const voopt_t *opt);
 EXPORT trackd_t *gettrack(const track_t *track,int uid);
 EXPORT int outofview(const track_t *track,const voopt_t *opt,
                      int id,gtime_t time);
