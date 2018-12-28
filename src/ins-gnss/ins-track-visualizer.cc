@@ -48,6 +48,7 @@ extern void drawtrack(const track_t *track,const voopt_t *opt)
 {
     char allName[126][126];
     int i,j;
+    img_t *imgp;
 
     trace(3,"drawtrack: n=%d\n",track->n);
 
@@ -56,8 +57,10 @@ extern void drawtrack(const track_t *track,const voopt_t *opt)
         /* for each track. */
         for (j=0;j<track->data[i].n;j++) {
 
-            cv::Mat outImage(track->data[i].I[j].h,track->data[i].I[j].w,CV_8UC3);
-            img2Img(&track->data[i].I[j],outImage);
+            if (!(imgp=getimgdata(track->data[i].data[j].time))) continue;
+
+            cv::Mat outImage(imgp->h,imgp->w,CV_8UC3);
+            img2Img(imgp,outImage);
 
             cv::Point point;
             point.x=(int)track->data[i].data[j].u;
@@ -85,6 +88,7 @@ extern void drawtrackd(const trackd_t *track,const voopt_t *opt)
 {
     static int first=1;
     int j;
+    img_t *imgp;
 
     trace(3,"drawtrackd: n=%d\n",track->n);
 
@@ -95,8 +99,10 @@ extern void drawtrackd(const trackd_t *track,const voopt_t *opt)
     /* for each track. */
     for (j=0;j<track->n;j++) {
 
-        cv::Mat outImage(track->I[j].h,track->I[j].w,CV_8UC3);
-        img2Img(&track->I[j],outImage);
+        if (!(imgp=getimgdata(track->data[j].time))) continue;
+
+        cv::Mat outImage(imgp->h,imgp->w,CV_8UC3);
+        img2Img(imgp,outImage);
 
         cv::Point point;
         point.x=(int)track->data[j].u;

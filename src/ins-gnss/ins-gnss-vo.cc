@@ -67,6 +67,14 @@ typedef struct vofilt {                       /* vo filter workspace type */
 static vofilt_t vofilt={0};                   /* vo aid filter workspace */
 static track_t  tracks={0};                   /* all tracking feature points data */
 static match_t  matchs={0};                   /* match feature points data */
+static const insstate_t *inss=NULL;           /* pointer to ins states */
+static const insopt_t   *opts=NULL;           /* pointer to ins options */
+
+static int (*featpos_funcptr)(const cams_t *cam1,const cams_t *cam2,const insstate_t *ins,
+                              const double *uv1,
+                              const double *uv2,
+                              const double *K,
+                              double *pf);    /* function pointer of feature position compute function */
 
 /* add a track feature to hash table------------------------------------------*/
 static void hash_add_feature(struct hashtable **ht,const int id,const trackd_t *ptk)
@@ -133,6 +141,7 @@ extern void initvoaid(insopt_t *opt)
     opt->voopt.match.cv=opt->voopt.calib.cv;
 
     init_match(&matchs,&opt->voopt.match);
+    inittrackimgbuf(&opt->voopt);
 
     vofilt.nx=xnX(opt);
     vofilt.Px=zeros(vofilt.nx,vofilt.nx); vofilt.n=vofilt.nmax=0;
@@ -151,8 +160,10 @@ extern void freevoaid()
     for (i=0;i<vofilt.n;i++) {
         hash_destroy(&vofilt.data[i].trackfeat);
     }
-    if (vofilt.data) free(vofilt.data);
-    return;
+    if (vofilt.data) {
+        free(vofilt.data);
+    }
+    freetrackimgbuf(); return;
 }
 /* resize matrix--------------------------------------------------------------
  * args:    double *A  IO  resized matrix
@@ -618,8 +629,8 @@ static void featureH(const trackd_t *trackf,const cams_t *cam,
     }
 }
 /* find all camera poses where feature points are observed--------------------*/
-static int findallcam(const trackd_t *feat,const insopt_t *opt,gtime_t time,
-                      int *index)
+static int findallcamera(const trackd_t *feat,const insopt_t *opt,gtime_t time,
+                         int *index)
 {
     int i,k,j;
     for (i=0,k=0;i<vofilt.n;i++) {
@@ -658,29 +669,22 @@ extern void rt2tf(const double *R,const double *t,double *T)
 /* transform matrix convert to rotation and translation parameters-----------*/
 extern void tf2rt(const double *T,double *R,double *t)
 {
-    seteye(R,3); setzero(t,1,3);
-    R[0]=T[0 ]; R[3]=T[4 ]; R[6]=T[8 ];
-    R[1]=T[1 ]; R[4]=T[5 ]; R[7]=T[9 ];
-    R[2]=T[2 ]; R[5]=T[6 ]; R[8]=T[10];
-    t[0]=T[12]; t[1]=T[13]; t[2]=T[14];
+    if (R) {
+        seteye(R,3);
+        R[0]=T[0]; R[3]=T[4]; R[6]=T[8 ];
+        R[1]=T[1]; R[4]=T[5]; R[7]=T[9 ];
+        R[2]=T[2]; R[5]=T[6]; R[8]=T[10];
+    }
+    if (t) {
+        setzero(t,1,3);
+        t[0]=T[12]; t[1]=T[13]; t[2]=T[14];
+    }
 }
 /* compute relative transformation between two frame -------------------------*/
 static void reltf(gtime_t ts,gtime_t te,const cams_t *cam1,const cams_t *cam2,
                   double *C,double *t)
 {
-    double dT[16],T1[16],T2[16];
 
-    rt2tf(cam1->Cce,cam1->re,T1);
-    rt2tf(cam2->Cce,cam2->re,T2);
-
-    if (!matinv(T1,4)) {
-        matmul("NN",4,4,4,1.0,T1,T2,0.0,dT);
-    }
-    else {
-        seteye(dT,4);
-    }
-    if (matinv(dT,4)) seteye(dT,4);
-    tf2rt(dT,C,t); 
 }
 /* compute camera project matrix----------------------------------------------*/
 static int prjmatrix(const double *C,const double *t,const double *K,double *P)
@@ -693,42 +697,187 @@ static int prjmatrix(const double *C,const double *t,const double *K,double *P)
     matmul("NN",3,4,3,1.0,K,M,0.0,P);
     return 1;
 }
-/* initial feature point position in ecef-------------------------------------*/
-static int initfeatpos(const cams_t *cam1,const cams_t *cam2,const double *uv1,
-                       const double *uv2,const double *K,double *pf)
+/* bearing vector of feature point--------------------------------------------*/
+static int bearingvector(const cams_t *cam,const insstate_t *ins,const double *uv,
+                         const double *K,double *bv)
 {
-    double C[9],t[3],P1[12],P2[12];
-    double J[16],U[16],W[16],V[16];
+    double img_p[2],uimg_p[2],n; int i;
+    cam_t camp;
+
+    trace(2,"bearingvector:\n");
+
+    /* camera calibration parameters */
+    camp.k1=ins->k1; camp.k2=ins->k2;
+    camp.p1=ins->p1; camp.p2=ins->p2;
+
+    /* unscale and center */
+    img_p[0]=(uv[0]-K[6])/K[0];
+    img_p[1]=(uv[1]-K[7])/K[4];
+
+    /* undistort */
+    if (!undistortradtan(&camp,img_p,uimg_p,NULL)) {
+
+        trace(2,"undistort fail\n");
+        return 0;
+    }
+    /* project 1 into z direction and normalization*/
+    bv[0]=uimg_p[0];
+    bv[1]=uimg_p[1];
+    bv[2]=1.0;
+    return 1;
+}
+/* initial feature point position using bearing vector------------------------*/
+static int initfeatpos_bearvetcor(const cams_t *cam1,const cams_t *cam2,const insstate_t *ins,
+                                  const double *uv1,const double *uv2,
+                                  const double *K,double *pf)
+{
+    double T1[16],T2[16],dT[16],R[9],t[3],A[16];
+    double bv1[3],bv2[3],P1[12],P2[12];
+    int i;
+
+    trace(3,"initfeatpos_bearvetcor:\n");
+
+    rt2tf(cam1->Cce,cam1->re,T1); rt2tf(cam2->Cce,cam2->re,T2);
+    if (!matinv(T1,4)) {
+        matmul("NN",4,4,4,1.0,T1,T2,0.0,dT);
+    }
+    else {
+        seteye(dT,4);
+    }
+    matinv(dT,4); tf2rt(dT,R,t);
+
+    /* bearing vector: cam1->uv1, cam2->uv2 */
+    bearingvector(cam1,ins,uv1,K,bv1);
+    bearingvector(cam2,ins,uv2,K,bv2);
+
+    /* camera project matrix */
+    prjmatrix(R,t,K,P2); seteye(R,3); setzero(t,1,3);
+    prjmatrix(R,t,K,P1);
+
+    for (i=0;i<4;i++) {
+        A[0+4*i]=P1[2+3*i]*bv1[0]-P1[0+3*i]*bv1[2];
+        A[1+4*i]=P1[2+3*i]*bv1[1]-P1[1+3*i]*bv1[2];
+        A[2+4*i]=P2[2+3*i]*bv2[0]-P2[0+3*i]*bv2[2];
+        A[3+4*i]=P2[2+3*i]*bv2[1]-P2[1+3*i]*bv2[2];
+    }
+    if (!svd(A,4,4,NULL,NULL,dT)) {
+        trace(2,"Jacobians svd fail\n");
+        return 0;
+    }
+    /* return false if this point is at infinity */
+    if (fabs(dT[3+3*4])<1E-10) {
+        trace(2,"feature point is at infinity\n");
+        return 0;
+    }
+    for (i=0;i<3;i++) pf[i]=dT[i+3*4]/dT[3+3*4];
+    trace(3,"feature position: %8.4lf  %8.4lf  %8.4lf\n",pf[0],pf[1],pf[2]);
+    return 1;
+}
+/* initial feature point position using fast non-linear approximation---------*/
+static int initfeatpos_nolinear(const cams_t *cam1,const cams_t *cam2,const insstate_t *ins,
+                                const double *uv1,const double *uv2,
+                                const double *K,double *pf)
+{
+    double A[4],b[2],R[9],t[3],b1[3],b2[3],bt[3],lambda[2];
+    double T1[16],T2[16],dT[16],xm[3],xn[3];
+    int i;
+
+    trace(3,"initfeatpos_nolinear:\n");
+
+    /* transformation */
+    rt2tf(cam1->Cce,cam1->re,T1); rt2tf(cam2->Cce,cam2->re,T2);
+    if (!matinv(T1,4)) {
+        matmul("NN",4,4,4,1.0,T1,T2,0.0,dT);
+    }
+    else seteye(dT,4); tf2rt(dT,R,t);
+
+    /* bearing vector: cam1->uv1, cam2->uv2 */
+    bearingvector(cam1,ins,uv1,K,b1);
+    bearingvector(cam2,ins,uv2,K,b2);
+
+    matmul3("N",R,b2,bt);
+
+    b[0]=dot(t,b1,3);
+    b[1]=dot(t,bt,3);
+    
+    A[0]= dot(b1,b1,3); A[1]=dot(b1,bt,3); A[2]=-A[1];
+    A[3]=-dot(bt,bt,3);
+
+    if (matinv(A,2)) return 0;
+    matmul("NN",2,1,2,1.0,A,b,0.0,lambda);
+
+    for (i=0;i<3;i++) {
+        xm[i]=lambda[0]*b1[i]; xn[i]=t[i]+lambda[1]*bt[i];
+        pf[i]=(xm[i]+xn[i])/2.0;
+    }
+    trace(3,"feature position: %8.4lf  %8.4lf  %8.4lf\n",pf[0],pf[1],pf[2]);
+    return 1;
+}
+/* initial feature point position using chieral method------------------------*/
+static int initfeatpos_chieral(const cams_t *cam1,const cams_t *cam2,const insstate_t *ins,
+                               const double *uv1,const double *uv2,
+                               const double *K,double *pf)
+{
+    double C[9],t[3],P1[12],P2[12],T1[16],T2[16],dT[16];
+    double J[16],V[16],x1[3],x2[3],X[4];
     int j;
 
-    /* relative camera transformation */
-    reltf(cam1->time,cam2->time,cam1,cam2,C,t);
+    trace(3,"initfeatpos_chieral:\n");
 
-    tracemat(3,C,3,3,12,6);
-    tracemat(3,t,1,3,12,3);
+    /* relative camera transformation */
+    rt2tf(cam1->Cce,cam1->re,T1); rt2tf(cam2->Cce,cam2->re,T2);
+    if (!matinv(T1,4)) {
+        matmul("NN",4,4,4,1.0,T1,T2,0.0,dT);
+    }
+    else {
+        seteye(dT,4);
+    }
+    tracemat(3,dT,4,4,12,6);
+    matinv(dT,4); tf2rt(dT,C,t);
 
     /* camera project matrix */
     prjmatrix(C,t,K,P2); seteye(C,3); setzero(t,1,3);
     prjmatrix(C,t,K,P1);
-
     for (j=0;j<4;j++) {
         J[0+4*j]=P1[2+3*j]*uv1[0]-P1[0+3*j];
         J[1+4*j]=P1[2+3*j]*uv1[1]-P1[1+3*j];
         J[2+4*j]=P2[2+3*j]*uv2[0]-P2[0+3*j];
         J[3+4*j]=P2[2+3*j]*uv2[1]-P2[1+3*j];
     }
-    tracemat(3,J,4,4,12,6);
-    if (!svd(J,4,4,U,W,V)) {
-        trace(2,"Jacobians svd fail\n");
-        return 0;
-    }
+    if (!svd(J,4,4,NULL,NULL,V)) return 0;
+
     /* return false if this point is at infinity */
     if (fabs(V[3+3*4])<1E-10) {
         trace(2,"feature point is at infinity\n");
         return 0;
     }
-    for (j=0;j<3;j++) pf[j]=V[j+3*4]/V[3+3*4];
+    for (j=0;j<4;j++) X[j]=V[j+3*4];
+    matmul("NN",3,1,4,1.0,P1,X,0.0,x1);
+    matmul("NN",3,1,4,1.0,P2,X,0.0,x2);
+
+    if (x1[2]*X[3]<0.0||x2[2]*X[3]<0.0) return 0;
+    for (j=0;j<3;j++) {
+        pf[j]=V[j+3*4]/V[3+3*4];
+    }
+    trace(3,"feature position: %8.4lf  %8.4lf  %8.4lf\n",pf[0],pf[1],pf[2]);
     return 1;
+}
+/* initial feature point position --------------------------------------------*/
+static int initfeatpos(const cams_t *cam1,const cams_t *cam2,const insstate_t *ins,
+                       const double *uv1,
+                       const double *uv2,const double *K,double *pf,
+                       int method)
+{
+    trace(2,"initfeatpos: method=%d\n",method);
+
+    switch (method) {
+        case 0: featpos_funcptr=initfeatpos_chieral;    break;
+        case 1: featpos_funcptr=initfeatpos_nolinear;   break;
+        case 2: featpos_funcptr=initfeatpos_bearvetcor; break;
+        default:
+            featpos_funcptr=initfeatpos_chieral; break;
+    }
+    return featpos_funcptr(cam1,cam2,ins,uv1,uv2,K,pf);
 }
 /* estimate feature point position in ecef------------------------------------*/
 static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
@@ -737,11 +886,11 @@ static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
     static double uv1[2],uv2[2];
     double K[9]={0};
     cams_t *cam1,*cam2;
-    int k;
+    int k=0;
 
     trace(3,"estfeatpos:\n");
 
-    if (!(k=findallcam(feat,opt,time,index))||(k!=feat->n)) {
+    if (!(k=findallcamera(feat,opt,time,index))||(k!=feat->n)) {
         trace(2,"no found camera observed this feature\n");
         return 0;
     }
@@ -756,18 +905,17 @@ static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
     uv2[0]=feat->data[feat->n-1].u;
     uv2[1]=feat->data[feat->n-1].v;
     getK(ins,K);
-    
-#if 1
+
     /* draw track feature for debug */
     drawtrackd(feat,&opt->voopt);
-#endif
+
     /* initial feature point position */
-    if (!initfeatpos(cam1,cam2,uv1,uv2,K,pf)) {
+    if (!initfeatpos(cam1,cam2,ins,uv1,uv2,K,pf,0)) {
         trace(2,"initial feature position fail\n");
         return 0;
     }
-    
-    return k;
+    feat->flag=TRACK_INIT; /* initial flag */
+    return 1;
 }
 /* get feature point measurement data-----------------------------------------*/
 static int getfeatmeas(const feature *feat,const insstate_t *ins,double *pfn)
@@ -780,7 +928,7 @@ static int getfeatmeas(const feature *feat,const insstate_t *ins,double *pfn)
     cam.p1=ins->p1; cam.p2=ins->p2;
     getK(ins,K);
 
-    uv[0]=feat->u; uv[1]=feat->v; uv[2]=1.0;
+    uv[0]=feat->u; uv[1]=feat->v; pfn[2]=uv[2]=1.0;
 
     if (matinv(K,3)) return 0;
     matmul3v("N",K,uv,pf);
@@ -829,7 +977,7 @@ static int itergnop(const int* index,int k,trackd_t *feat,const insopt_t *opt,
 
         /* feature observation */
         if (!getfeatmeas(&feat->data[j],ins,zhat)) continue;
-        T[0]=x[0]; T[2]=x[1]; T[3]=1.0;
+        T[0]=x[0]; T[1]=x[1]; T[2]=1.0;
 
         matmul3v("N",C,T,h);
         for (i=0;i<3;i++) h[i]=T[i]+x[2]*t[i];
@@ -888,7 +1036,7 @@ static int itergnop(const int* index,int k,trackd_t *feat,const insopt_t *opt,
 static int calcgnposest(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,
                         gtime_t time,int *index)
 {
-    int i,k;
+    int i,k=0;
     double Jprev=1E9,Jderiv,x[3],dx[3],pf[3],Jn;
 
     trace(3,"calcgnposest:\n");
@@ -935,9 +1083,9 @@ static int featmeas(trackd_t *trk,const insstate_t *ins,const insopt_t *opt,
 
     static int ifo=xiCfo(opt),nfo=xnCfo(opt);
     static int ikp=xiCkp(opt),nkp=xnCkp(opt);
-
+    
     /*  compute feature position*/
-    if (!(k=calcgnposest(trk,opt,ins,time,index))) {
+    if (!(*ki=k=calcgnposest(trk,opt,ins,time,index))) {
         return 0;
     }
     Hc =zeros(2,9); Hkp=zeros(2,4);
@@ -1093,7 +1241,7 @@ static int outdetect(const double *P,const double *Ho,const double *Ro,
 static int updatefeatmeas(const insopt_t *opt,insstate_t *ins,gtime_t time)
 {
     double *H,*R,*v,*Ho,*Ro,*vo,*Hf,*x,*Hot;
-    int i,nv,nx=vofilt.nx,n=vofilt.n,index[MAX_TRACK_LEN],ki,j,flag=1;
+    int i,nv,nx=vofilt.nx,n=vofilt.n,index[MAX_TRACK_LEN],ki=0,j,flag=1;
     int p,q;
 
     trace(3,"updatefeatmeas: time=%s\n",time_str(time,4));
@@ -1118,9 +1266,13 @@ static int updatefeatmeas(const insopt_t *opt,insstate_t *ins,gtime_t time)
         if (flag&&outdetect(vofilt.Px,Ho,Ro,vo,nv,nx)) flag=0;
 #endif
         /* remove feature */
-        for (j=0;j<ki;j++) {
-            hash_delete_feature(&vofilt.data[index[i]].trackfeat,tracks.data[i].uid);
+        for (j=0;j<vofilt.n;j++) {
+            if (!hash_find_feature(vofilt.data[j].trackfeat,tracks.data[i].uid)) continue;
+            hash_delete_feature(&vofilt.data[j].trackfeat,tracks.data[i].uid);
         }
+        /* remove match index in hash table */
+        rmmatchindex(tracks.data[i].last_idx);
+
         tracks.data[i].last_idx=-1;
         if (flag==0) continue;
 
@@ -1129,12 +1281,12 @@ static int updatefeatmeas(const insopt_t *opt,insstate_t *ins,gtime_t time)
         if (filter(x,vofilt.Px,Hot,vo,Ro,nx,q)) {
 
             trace(2,"filter error\n");
-            flag++;
+            flag++; continue;
         }
         /* update camera pose and ins states */
         updatestat(x,ins,opt,index,ki);
 
-        tracks.data[i].flag=4;
+        tracks.data[i].flag=TRACK_FILTER;
     }
     free(H ); free(v ); free(R ); free(x);
     free(Hf); free(Ho); free(vo);
@@ -1184,8 +1336,74 @@ extern int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
         case 0: return propagate(&vofilt,ins); 
         case 1: return propagate(&vofilt,ins)&&updateall(ins,opt,img);
     }
+    if (inss==NULL) inss=ins;
+    if (opts==NULL) opts=opt;
     return 0;
 }
+/* predict image point using homography---------------------------------------
+ * args:    insopt_t *opt   I   ins options
+ *          double *R,*t    I   rotation and translation between frames
+ *          double *K       I   camera calibration parameters
+ *          double *uv      I   image coordinate of precious frame
+ *          double *pre_uv  O   predict image coordinate in current frame
+ * return: status (1: ok, 0: fail)
+ * ---------------------------------------------------------------------------*/
+extern int predictfeat(const double *R,const double *t,const double *K,
+                       const double *uv,double *uvp)
+{
+    double H[9],Ki[9],p[3],pp[3],T[16];
+    double C[9],r[9];
+
+    trace(3,"predictfeatH:\n");
+
+    /* pose of current relative to precious */
+    rt2tf(R,t,T); if (matinv(T,4)) return 0;
+    tf2rt(T,C,r);
+
+    /* homography by rotation */
+    matcpy(Ki,K,3,3); if (matinv(Ki,3)) return 0;
+    matmul33("NNN",K,C,Ki,3,3,3,3,H);
+
+    trace(3,"H=\n"); tracemat(3,H,3,3,12,6);
+
+    /* predict image coordinate */
+    p[0]=uv[0];
+    p[1]=uv[1];
+    p[2]=1.0;
+    matmul("NN",3,1,3,1.0,H,p,0.0,pp);
+
+    uvp[0]=pp[0]/pp[2]; uvp[1]=pp[1]/pp[2];
+    return 1;
+}
+/* compute coarse feature point position--------------------------------------
+ * args:    trackd_t *feat  IO  tracking feature point
+ *          gtime_t　time   I   current time
+ *          double *pf      O   feature point position relative to first frame
+ * return: status (1: ok, 0: fail)
+ * ---------------------------------------------------------------------------*/
+extern int getfeaturepos(trackd_t *feat,gtime_t time,double *pf)
+{
+    int index[MAX_TRACK_LEN];
+    return estfeatpos(feat,opts,inss,time,index,pf);
+}
+/* get camera pose which observe given feature point--------------------------
+ * args:    gtime_t  time  I  current time
+ *          double *R      O  rotation matrix
+ *          double *t      O  translation matrix
+ * return: status (1: ok, 0: fail)
+ * ---------------------------------------------------------------------------*/
+extern int getcamerapose(gtime_t time,double *R,double *t)
+{
+    int i;
+    for (i=0;i<vofilt.n;i++) {
+        if (fabs(timediff(time,vofilt.data[i].time))>1E-5) continue;
+        if (R) matcpy(R,vofilt.data[i].Cce,3,3);
+        if (t) matcpy(t,vofilt.data[i].re ,3,1);
+        return 1;
+    }
+    return 0;
+}
+
 
 
 

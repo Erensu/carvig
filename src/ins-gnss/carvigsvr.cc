@@ -1226,7 +1226,7 @@ static int imuimgalign(rtksvr_t *svr)
             sow2=time2gpst(svr->imu[j].time,NULL);
             if (sow1==0.0||sow2==0.0||fabs(sow1-sow2)>DTTOL) continue;
 
-            trace(3,"imu and image time align ok\n");
+            tracet(3,"imu and image time align ok\n");
             syn->imu=j;
             syn->img=i;
             syn->tali[4]=1;
@@ -1237,7 +1237,7 @@ static int imuimgalign(rtksvr_t *svr)
             sow3=time2gpst(svr->pvt[k].time,NULL);
             if (sow2==0.0||sow3==0.0||fabs(sow3-sow2)>DTTOL) continue;
 
-            trace(3,"imu and solution time align ok\n");
+            tracet(3,"imu and solution time align ok\n");
             syn->pvt=k;
             syn->tali[4]=2;
             break;

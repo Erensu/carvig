@@ -237,14 +237,13 @@ static int e2rt(const frame_t *frame,const double *E,const double *K,double *X,
         m=triangulate(frame,K,Ro,to,Xc);
         if (m>max) {
             max=m;
-            matcpy(X,Xc,4,n);
-            matcpy(R,Ro,3,3); matcpy(t,to,1,3);
+            matcpy(X,Xc,4,n); matcpy(R,Ro,3,3); matcpy(t,to,1,3);
         }
     }
     free(Ra); free(Rb); free(U);
     free(Ro); free(to);
-    free(S); free(V);
-    free(T); free(Xc);
+    free(S ); free(V );
+    free(T ); free(Xc);
     return max; /* return number of inliers */
 }
 /* compare distance ---------------------------------------------------------*/

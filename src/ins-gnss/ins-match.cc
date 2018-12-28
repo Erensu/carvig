@@ -13,7 +13,6 @@
 #include <emmintrin.h>
 #include <pmmintrin.h>
 #include <triangle.h>
-#include <include/carvig.h>
 
 /* constants ----------------------------------------------------------------*/
 #define add_data_func_delc(data_type,add_data_type)            \
@@ -38,6 +37,7 @@
 
 #define TRACR_FEAT_POINTS    1       /* output feature points for debugs */
 #define MATCH_RATIO          3.0     /* ratio of min-cost to second-min-cost */
+#define USE_NEW_BUCKET       1       /* use new bucket feature exctract method */
 
 /* type definitions ----------------------------------------------------------*/
 typedef struct maximum {             /* structure for storing interest points */
@@ -74,17 +74,29 @@ typedef struct deltas {
     delta_t *data;
 } deltas_t;
 
-typedef struct ivec {                 /* int's vector */
+typedef struct ivec {                /* int's vector */
     int n,nmax;                      /* number and max numbers of vector */
     int *data;                       /* vector data */
 } ivec_t;
+
+typedef struct area {
+    int rect[4][2];                  /* rectangle area for detect feature points */
+} area_t;
+
+typedef struct hashtable {           /* hash table type */
+    int last_idx,flag;               /* index of track feature for matching
+                                      * flag=0: new created
+                                      * flag=1: update `last_idx'
+                                      * */
+    UT_hash_handle hh;               /* makes this structure hashable */
+} hashtable_t;
 
 /* global variables-----------------------------------------------------------*/
 static int32_t dims_c[3]={0},dims_p[3]={0}; /* dims for current processing image data */
 static ranges_t mranges={0};                /* store all range data for matching feature points */
 static int32_t  margin;
 
-static int32_t *m1p1,*m1c1;
+static int32_t *m1p1,*m1c1;                 /* image data ring buffer */
 static int32_t *m1p2,*m1c2;
 static int32_t n1p1,n1c1;
 static int32_t n1p2,n1c2;
@@ -93,7 +105,8 @@ static uint8_t *I1p_du,*I1c_du;
 static uint8_t *I1p_dv,*I1c_dv;
 static uint8_t *I1p_du_full,*I1c_du_full;
 static uint8_t *I1p_dv_full,*I1c_dv_full;
-static int greplace=0;
+static int greplace=0;                      /* replace flag (0: no-replace,1: replace) */
+static hashtable_t *hash=NULL;              /* hash table storing all track feature index in `struct:track_t' */
 
 /* declaration add data function----------------------------------------------*/
 add_data_func_delc(ivec,int)
@@ -102,10 +115,58 @@ add_data_func_delc(match_set,match_point)
 add_data_func_delc(maximum_set,maximum)
 add_data_func_delc(deltas,delta)
 
+/* add element to hash table---------------------------------------------------*/
+static void hash_add(hashtable_t **ht,int last_idx)
+{
+    struct hashtable *s=NULL;
+    HASH_FIND_INT(*ht,&last_idx,s);  /* id already in the hash? */
+    if (s==NULL) {
+
+        s=(struct hashtable *)malloc(sizeof(struct hashtable));
+        s->last_idx=last_idx;
+        s->flag=0;
+        HASH_ADD_INT(*ht,last_idx,s);
+    }
+}
+/* find an element for given value---------------------------------------------*/
+static void hash_deteleflag(hashtable_t **ht,int flag)
+{
+    struct hashtable *current,*tmp;
+    HASH_ITER(hh,*ht,current,tmp) {
+
+        if (current->flag==flag) {
+            HASH_DEL(*ht,current);  /* delete; users advances to next */
+            free(current);          /* optional- if you want to free  */
+        }
+    }
+}
+/* delete hash table-----------------------------------------------------------*/
+static void hash_delete(hashtable_t **ht)
+{
+    struct hashtable *current,*tmp;
+
+    HASH_ITER(hh,*ht,current,tmp) {
+        HASH_DEL(*ht,current);  /* delete; users advances to next */
+        free(current);          /* optional- if you want to free  */
+    }
+}
+/* counts of elements in hash table-------------------------------------------*/
+static int hash_counts(const struct hashtable *ht)
+{
+    return HASH_COUNT(ht);
+}
+/* find track data from hash table--------------------------------------------*/
+static struct hashtable *hash_find(hashtable_t **ht,const int last_idx)
+{
+    struct hashtable *s=NULL;
+
+    HASH_FIND_INT(*ht,&last_idx,s);  /* s: output pointer */
+    return s;
+}
 /* output feature points------------------------------------------------------*/
 static void trace_match_points(const match_set_t *match)
 {
-    int i;
+    register int i;
     for (i=0;i<match->n;i++) {
         trace(3,"ip=%3d  ic=%3d  (up,vp)=(%8.3lf,%8.3lf),(uc,vc)=(%8.3lf,%8.3lf)\n",
               match->data[i].ip,match->data[i].ic,
@@ -117,7 +178,7 @@ static void trace_match_points(const match_set_t *match)
 /* initial a int's vector-----------------------------------------------------*/
 static int init_ivec(ivec_t **ivec,const int n)
 {
-    int i;
+    register int i;
     *ivec=(ivec_t*)malloc(sizeof(ivec_t)*n);
     if (*ivec) {
         (*ivec)->n=0; (*ivec)->nmax=n;
@@ -148,13 +209,13 @@ static void create_index(const matchopt_t *opt,int32_t* m,int32_t n,ivec_t *k,
     for (i=0;i<n;i++) {
 
         /* extract coordinates and class */
-        int u=*(m+step*i+0); /* u-coordinate */
-        int v=*(m+step*i+1); /* v-coordinate */
-        int c=*(m+step*i+3); /* class */
+        register int u=*(m+step*i+0); /* u-coordinate */
+        register int v=*(m+step*i+1); /* v-coordinate */
+        register int c=*(m+step*i+3); /* class */
 
         /* compute row and column of bin to which this observation belongs */
-        int ub=MIN((int)floor((float)u/(float)opt->match_binsize),ubn-1);
-        int vb=MIN((int)floor((float)v/(float)opt->match_binsize),vbn-1);
+        register int ub=MIN((int)floor((float)u/(float)opt->match_binsize),ubn-1);
+        register int vb=MIN((int)floor((float)v/(float)opt->match_binsize),vbn-1);
 
         /* save index */
         if (!add_ivec_int(&k[(c*vbn+vb)*ubn+ub],&i)) {
@@ -171,7 +232,7 @@ static int find_match(int32_t* m1,const int i1,int32_t* m2,
 {
     /* init and load image coordinates + feature */
     *min_ind        =0;
-    double  min_cost=1E9,scdmin_cost=1E9;
+    register double  min_cost=1E9,scdmin_cost=1E9;
     int32_t u1      =*(m1+step*i1+0);
     int32_t v1      =*(m1+step*i1+1);
     int32_t c       =*(m1+step*i1+3);
@@ -179,8 +240,8 @@ static int find_match(int32_t* m1,const int i1,int32_t* m2,
     __m128i xmm2    =_mm_load_si128((__m128i*)(m1+step*i1+8));
     __m128i xmm3,xmm4;
 
-    double cost;
-    float u_min,u_max,v_min,v_max;
+    register double cost;
+    register float u_min,u_max,v_min,v_max;
     register int u_bin,v_bin,i,u2,v2,k2_ind;
 
     /* restrict search range with prior */
@@ -242,11 +303,11 @@ static inline int get_address_offset_image(int u,int v,int w)
 }
 /* internal function for matching feature points------------------------------*/
 static int match_internal(const matchopt_t *opt,match_set_t *mset,int32_t *mp,
-                          int32_t *mc,int np,int nc,bool use_prior)
+                          int32_t *mc,int np,int nc,bool use_prior,int type)
 {
-    int step,ub,vb,b,*M,uc,vc,un,vn,nb,flag;
+    register int step,ub,vb,b,*M,uc,vc,un,vn,nb,flag;
     ivec_t *kp,*kc;
-    register int i,ip,i1c2,up,vp;
+    register int i,ip,i1c2,up,vp,ind;
     match_point p;
 
     trace(3,"match_features:\n");
@@ -265,6 +326,7 @@ static int match_internal(const matchopt_t *opt,match_set_t *mset,int32_t *mp,
         return 0;
     }
     M=(int*)calloc(dims_c[0]*dims_c[1],sizeof(int32_t));
+
     create_index(opt,mp,np,kp,ub,vb);
     create_index(opt,mc,nc,kc,ub,vb);
 
@@ -273,7 +335,7 @@ static int match_internal(const matchopt_t *opt,match_set_t *mset,int32_t *mp,
 
         flag=0;
 
-        /* coordinates in previous image */
+        /* coordinates in current image */
         uc=*(mc+step*i+0);
         vc=*(mc+step*i+1);
 
@@ -296,13 +358,15 @@ static int match_internal(const matchopt_t *opt,match_set_t *mset,int32_t *mp,
         vp=*(mp+step*ip+1);
 
         /* add match if this pixel isn't matched yet */
-        if (*(M+get_address_offset_image(uc,vc,dims_c[0]))==0) {
+        if (*(M+(ind=get_address_offset_image(uc,vc,dims_c[0])))==0) {
 
+            /* match ok */
             p.up=up; p.vp=vp; p.ip=ip;
             p.uc=uc; p.vc=vc; p.ic=i;
             add_match_set_match_point(mset,&p);
 
-            *(M+get_address_offset_image(uc,vc,dims_c[0]))=1;
+            /* set match flag of this feature point */
+            *(M+ind)=1;
         }
     }
     for (i=0;i<b;i++) {
@@ -332,29 +396,37 @@ static uint8_t* create_halt_resimg(uint8_t *I,const int32_t* dims)
                                                 (int32_t)I[(v*2+1)*dims[2]+u*2+1])/4);
     return I_half;
 }
+/* in area?-------------------------------------------------------------------*/
+static int inarea(const area_t *area,int u,int v)
+{
+    return u<area->rect[3][0]&&u>area->rect[0][0]&&
+           v>area->rect[0][1]&&v<area->rect[3][1];
+}
 /* Alexander Neubeck and Luc Van Gool: Efficient Non-Maximum Suppression,-----
  * ICPR'06, algorithm 4
  * ---------------------------------------------------------------------------*/
 static void nonMaximumSuppression(int16_t* I_f1,int16_t* I_f2,const int32_t* dims,
                                   maximum_set *maxima,int nms_n,
-                                  const matchopt_t *opt)
+                                  const matchopt_t *opt,const area_t *area)
 {
     /* extract parameters */
-    int32_t width =dims[0];
-    int32_t height=dims[1];
-    int32_t bpl   =dims[2];
-    int32_t n     =nms_n;
-    int32_t tau   =opt->nms_tau;
+    register int32_t width =dims[0];
+    register int32_t height=dims[1];
+    register int32_t bpl   =dims[2];
+    register int32_t n     =nms_n;
+    register int32_t tau   =opt->nms_tau;
 
     maximum_t max;
 
     /* loop variables */
-    int32_t f1mini,f1minj,f1maxi,f1maxj,f2mini,f2minj,f2maxi,f2maxj;
-    int32_t f1minval,f1maxval,f2minval,f2maxval,currval;
-    int32_t addr;
+    register int32_t f1mini,f1minj,f1maxi,f1maxj,f2mini,f2minj,f2maxi,f2maxj;
+    register int32_t f1minval,f1maxval,f2minval,f2maxval,currval;
+    register int32_t addr;
 
     for (int32_t i=n+margin;i<width-n-margin;i+=n+1) {
         for (int32_t j=n+margin;j<height-n-margin;j+=n+1) {
+
+            if (area&&!inarea(area,i,j)) continue;
 
             f1mini=i; f1minj=j; f1maxi=i; f1maxj=j;
             f2mini=i; f2minj=j; f2maxi=i; f2maxj=j;
@@ -533,11 +605,11 @@ static int compute_features(uint8_t *I,const int32_t* dims,
 {
     trace(3,"compute_features:\n");
 
-    int16_t *I_f1;
-    int16_t *I_f2;
+    register int16_t *I_f1;
+    register int16_t *I_f2;
 
-    int32_t dims_matching[3],i;
-    int32_t s=1;
+    register int32_t dims_matching[3],i;
+    register int32_t s=1;
     
     memcpy(dims_matching,dims,3*sizeof(int32_t));
 
@@ -576,12 +648,12 @@ static int compute_features(uint8_t *I,const int32_t* dims,
         int nms_n_sparse=opt->nms_n*3;
         if (nms_n_sparse>10) nms_n_sparse=MAX(opt->nms_n,10);
 
-        nonMaximumSuppression(I_f1,I_f2,dims_matching,&mset1,nms_n_sparse,opt);
+        nonMaximumSuppression(I_f1,I_f2,dims_matching,&mset1,nms_n_sparse,opt,NULL);
         compute_descriptors(I_du,I_dv,dims_matching[2],&mset1);
     }
     /* extract dense maxima (2nd pass) via non-maximum suppression */
     maximum_set mset2={0};
-    nonMaximumSuppression(I_f1,I_f2,dims_matching,&mset2,opt->nms_n,opt);
+    nonMaximumSuppression(I_f1,I_f2,dims_matching,&mset2,opt->nms_n,opt,NULL);
     compute_descriptors(I_du,I_dv,dims_matching[2],&mset2);
 
     /* release filter images */
@@ -653,9 +725,9 @@ static int puchbackimg(uint8_t *I1,int32_t* dims,const int replace,
     trace(3,"puchback_img:\n");
 
     /* image dimensions */
-    int width =dims[0];
-    int height=dims[1];
-    int bpl   =dims[2];
+    register int width =dims[0];
+    register int height=dims[1];
+    register int bpl   =dims[2];
 
     /* sanity check */
     if (width<=0||height<=0||bpl<width||I1==0) {
@@ -663,7 +735,7 @@ static int puchbackimg(uint8_t *I1,int32_t* dims,const int replace,
         return 0;
     }
     if (replace) {
-        if (I1c)         _mm_free(I1c);
+        if (I1c )        _mm_free(I1c );
         if (m1c1)        _mm_free(m1c1); /* maximum points in current image */
         if (m1c2)        _mm_free(m1c2); /* maximum points in current image*/
         if (I1c_du)      _mm_free(I1c_du);
@@ -672,9 +744,9 @@ static int puchbackimg(uint8_t *I1,int32_t* dims,const int replace,
         if (I1c_dv_full) _mm_free(I1c_dv_full);
     }
     else {
-        if (I1p)         _mm_free(I1p);
+        if (I1p )        _mm_free(I1p );
         if (m1p1)        _mm_free(m1p1); /* maximum points in precious image */
-        if (m1p2)        _mm_free(m1p2);
+        if (m1p2)        _mm_free(m1p2); /* maximum points in precious image */
         if (I1p_du)      _mm_free(I1p_du);
         if (I1p_dv)      _mm_free(I1p_dv);
         if (I1p_du_full) _mm_free(I1p_du_full);
@@ -711,7 +783,6 @@ static int puchbackimg(uint8_t *I1,int32_t* dims,const int replace,
                      I1c_du,I1c_dv,
                      I1c_du_full,
                      I1c_dv_full,opt);
-
     return 1;
 }
 /* clear match set data-------------------------------------------------------*/
@@ -740,7 +811,8 @@ static void set_delta_val(delta_t *delta,const float val)
     int i; for (i=0;i<8;i++) delta->val[i]=val;
 }
 /* remove outliers for feature points-----------------------------------------*/
-static void remove_outliers(match_set_t *mset,const matchopt_t *opt)
+static void remove_outliers(match_set_t *mset,const matchopt_t *opt,int *index,
+                            int *num,int *nindex,int *nnum)
 {
     float p1_flow_u,p1_flow_v,p2_flow_u,p2_flow_v,p3_flow_u,p3_flow_v;
     int p1,p2,p3,i,*num_support;
@@ -836,9 +908,19 @@ static void remove_outliers(match_set_t *mset,const matchopt_t *opt)
     }
     /* refill matched feature points */
     free_match_set(mset);
-    for (i=0;i<in.numberofpoints;i++) {
+    for (i=0,num==NULL?0:*num=0,nnum==NULL?0:*nnum=0;i<in.numberofpoints;i++) {
         if (num_support[i]>=4) {
             add_match_set_match_point(mset,&p_matched_copy.data[i]);
+
+            /* add to hash table */
+            if (hash_find(&hash,p_matched_copy.data[i].ip)) {
+                if (index) {
+                    index[(*num)++]=MAX(mset->n-1,0);
+                }
+            }
+            else {
+                if (nindex) nindex[(*nnum)++]=MAX(mset->n-1,0);
+            }
         }
     }
     free_match_set(&p_matched_copy);
@@ -860,13 +942,11 @@ static void compute_prior_statistics(const matchopt_t *opt,match_set_t *mset,
                                      ranges_t *rngs)
 {
     /* compute number of bins */
-    int32_t u_bin_num=(int32_t)ceil((float)dims_c[0]/(float)opt->match_binsize);
-    int32_t v_bin_num=(int32_t)ceil((float)dims_c[1]/(float)opt->match_binsize);
-    int32_t bin_num  =v_bin_num*u_bin_num;
-    int32_t u_bin_min,u_bin_max,v_bin_min,v_bin_max,v_bin,u_bin;
-    int i,j;
-
-    trace(3,"compute_prior_statistics:\n");
+    register int32_t u_bin_num=(int32_t)ceil((float)dims_c[0]/(float)opt->match_binsize);
+    register int32_t v_bin_num=(int32_t)ceil((float)dims_c[1]/(float)opt->match_binsize);
+    register int32_t bin_num  =v_bin_num*u_bin_num;
+    register int32_t u_bin_min,u_bin_max,v_bin_min,v_bin_max,v_bin,u_bin;
+    register int i,j;
 
     /* number of matching stages */
     int32_t num_stages=2;
@@ -995,7 +1075,7 @@ static int parabolic_fit(const uint8_t* I1_du,const uint8_t* I1_dv,const int32_t
                          uint8_t* desc_buffer)
 {
     double *c,*b,*x,divisor,ddv,ddu;
-    int i,j,cost_curr;
+    register int i,j,cost_curr;
 
     trace(3,"parabolic_fit:\n");
 
@@ -1166,16 +1246,15 @@ static void refinement(match_set_t *mset,const matchopt_t *opt)
 }
 /* match feature points from image -------------------------------------------*/
 static int matchfeatures(const matchopt_t *opt,match_set_t *mset_sparse,
-                         match_set_t *mset_dense)
+                         match_set_t *mset_dense,int *index,int *num,int *nindex,
+                         int *nnum)
 {
     trace(3,"match_features:\n");
 
-    /* flow */
+    /* flow match feature points */
     if (m1p2==NULL||n1p2==0||m1c2==NULL||n1c2==0) return 0;
     if (opt->multi_stage) {
-        if (m1p1==NULL||n1p1==0||m1c1==NULL||n1c1==0) {
-            return 0;
-        }
+        if (m1p1==NULL||n1p1==0||m1c1==NULL||n1c1==0) return 0;
     }
     /* clear old matches */
     free_match_set(mset_sparse);
@@ -1185,27 +1264,30 @@ static int matchfeatures(const matchopt_t *opt,match_set_t *mset_sparse,
     if (opt->multi_stage) {
 
         /* 1st pass (sparse matches) */
-        match_internal(opt,mset_sparse,m1p1,m1c1,n1p1,n1c1,false);
-        remove_outliers(mset_sparse,opt);
+        match_internal(opt,mset_sparse,m1p1,m1c1,n1p1,n1c1,false,0);
+        remove_outliers(mset_sparse,opt,NULL,NULL,
+                        NULL,NULL);
 
         /* compute search range prior statistics (used for speeding up 2nd pass) */
         compute_prior_statistics(opt,mset_sparse,&mranges);
 
         /* 2nd pass (dense matches) */
-        match_internal(opt,mset_dense,m1p2,m1c2,n1p2,n1c2,true);
+        match_internal(opt,mset_dense,m1p2,m1c2,n1p2,n1c2,true,1);
 
         if (opt->refine>0) {
             refinement(mset_dense,opt);
         }
-        remove_outliers(mset_dense,opt);
+        remove_outliers(mset_dense,opt,index,num,
+                        nindex,nnum);
     }
     else {
         /* single pass matching */
-        match_internal(opt,mset_dense,m1p2,m1c2,n1p2,n1c2,false);
+        match_internal(opt,mset_dense,m1p2,m1c2,n1p2,n1c2,false,1);
         if (opt->refine>0) {
             refinement(mset_dense,opt);
         }
-        remove_outliers(mset_dense,opt);
+        remove_outliers(mset_dense,opt,index,num,
+                        nindex,nnum);
     }
     return mset_sparse->n;
 }
@@ -1258,7 +1340,7 @@ static void free_match_buf()
  * --------------------------------------------------------------------------*/
 static int getrand(int n,int num,int *sample)
 {
-    int i,j,ns,*list;
+    register int i,j,ns,*list;
 
     trace(3,"getrandsample:\n");
 
@@ -1281,11 +1363,11 @@ static int getrand(int n,int num,int *sample)
 static void bucketfeat(const matchopt_t *opt,const match_set_t *mp_dense,
                        match_set_t *mp_bucket,int maxnf)
 {
-    float u_max=0,bucket_w=(float)opt->bucket.w;
-    float v_max=0,bucket_h=(float)opt->bucket.h;
-    int i,u,v,*rlist,j,n;
+    register float u_max=0,bucket_w=(float)opt->bucket.w;
+    register float v_max=0,bucket_h=(float)opt->bucket.h;
+    register int i,u,v,*rlist,j,n;
 
-    trace(3,"bucket_features:\n");
+    trace(3,"bucketfeat:\n");
 
     if (mp_dense->n<=0) {
         trace(2,"no matched feature points\n");
@@ -1322,6 +1404,80 @@ static void bucketfeat(const matchopt_t *opt,const match_set_t *mp_dense,
         free(rlist);
     }
     for (i=0;i<bucket_cols*bucket_rows;i++) {
+        free_match_set(buckets);
+    }
+}
+/* bucket features point extract new version----------------------------------*/
+static void buketfeatnew(const matchopt_t *opt,const match_set_t *mp_dense,
+                         match_set_t *mp_bucket,int maxnf,int *index,int num,
+                         int *nindex,int nnum)
+{
+    float um=0,bw=(float)opt->bucket.w;
+    float vm=0,bh=(float)opt->bucket.h;
+    int i,u,v,*rlist,j,n,bc,br;
+
+    trace(3,"buketfeatnew:\n");
+
+    /* first time to match feature */
+    if (hash_counts(hash)<=0) {
+
+        /* bucket features point */
+        bucketfeat(opt,mp_dense,mp_bucket,maxnf);
+
+        /* add match index to hash table */
+        for (i=0;i<mp_bucket->n;i++) hash_add(&hash,mp_bucket->data[i].ic);
+        return;
+    }
+    if (num==0) return;
+
+    /* add matches from hash table */
+    for (i=0;i<num;i++) {
+        add_match_set_match_point(mp_bucket,&mp_dense->data[index[i]]);
+
+        /* update hash table */
+        struct hashtable *s;
+        if ((s=hash_find(&hash,mp_dense->data[index[i]].ip))) {
+            s->last_idx=mp_dense->data[index[i]].ic;
+            s->flag=1;
+        }
+    }
+    /* delete redundant elements in hash table */
+    hash_deteleflag(&hash,0);
+
+    /* add new matches to hash table */
+    if (nnum==0) return;
+    for (i=0;i<nnum;i++) {
+        if (mp_dense->data[nindex[i]].uc>um) um=mp_dense->data[nindex[i]].uc;
+        if (mp_dense->data[nindex[i]].vc>vm) vm=mp_dense->data[nindex[i]].vc;
+    }
+    /* buckets fill matches */
+    bc=(int)floor(um/bw)+1;
+    br=(int)floor(vm/bh)+1;
+
+    /* assign matches to their buckets */
+    match_set *buckets=(match_set*)calloc(sizeof(match_set),bc*br);
+    for (i=0;i<nnum;i++) {
+        u=(int)floor(mp_dense->data[nindex[i]].uc/bw );
+        v=(int)floor(mp_dense->data[nindex[i]].vc/bh);
+
+        add_match_set_match_point(&buckets[v*bc+u],&(mp_dense->data[nindex[i]]));
+    }
+    /* refill matches from buckets */
+    for (i=0;i<bc*br;i++) {
+
+        /* shuffle bucket indices randomly */
+        rlist=imat(1,buckets[i].n);
+
+        n=getrand(buckets[i].n,maxnf>buckets[i].n?buckets[i].n:maxnf/2,rlist);
+        for (j=0;j<n;j++) {
+            add_match_set_match_point(mp_bucket,&buckets[i].data[rlist[j]]);
+
+            /* add to hash table */
+            hash_add(&hash,buckets[i].data[rlist[j]].ic);
+        }
+        free(rlist);
+    }
+    for (i=0;i<bc*br;i++) {
         free_match_set(buckets);
     }
 }
@@ -1386,6 +1542,7 @@ extern void free_match(match_t *match)
     free_match_set(&match->mp_dense );
 
     free_match_buf();
+    hash_delete(&hash);
 }
 /* match feature points from input image data---------------------------------
  * args:    match_t *m         IO  match struct data
@@ -1394,9 +1551,12 @@ extern void free_match(match_t *match)
  * ---------------------------------------------------------------------------*/
 extern int matchfeats(match_t *pmatch,const img_t *img)
 {
-    int dims[3],i;
+    int dims[3],*index,num,*nindex,nnum;
 
     trace(3,"match: time=%s\n",time_str(img->time,4));
+
+    index =imat(1,img->h*img->w/2);
+    nindex=imat(1,img->h*img->w/2);
 
     dims[0]=img->w; dims[1]=img->h;
     dims[2]=img->w;
@@ -1413,22 +1573,30 @@ extern int matchfeats(match_t *pmatch,const img_t *img)
         return 0;
     }
     /* match feature points */
-    matchfeatures(&pmatch->opt,&pmatch->mp_sparse,&pmatch->mp_dense);
+    matchfeatures(&pmatch->opt,&pmatch->mp_sparse,&pmatch->mp_dense,index,&num,nindex,&nnum);
 
+#if USE_NEW_BUCKET
+    /* bucket features extract */
+    buketfeatnew(&pmatch->opt,&pmatch->mp_dense,&pmatch->mp_bucket,
+                 pmatch->opt.bucket.nmax,index,num,nindex,nnum);
+#else
     /* bucket features extract */
     bucketfeat(&pmatch->opt,&pmatch->mp_dense,&pmatch->mp_bucket,
                pmatch->opt.bucket.nmax);
+#endif
 
 #if TRACR_FEAT_POINTS
     trace_match_points(&pmatch->mp_bucket);
 #endif
     /* check match ok? */
-    if (pmatch->mp_dense .n<=0||
-        pmatch->mp_sparse.n<=0||
+    if (pmatch->mp_dense .n<=0||pmatch->mp_sparse.n<=0||
         pmatch->mp_bucket.n<=0) {
+
+        free(index); free(nindex);
         trace(2,"match feature fail\n");
         return 0;
     }
+    free(index); free(nindex);
     return pmatch->mp_bucket.n;
 }
 /* initial image struct data-------------------------------------------------*/
@@ -1454,4 +1622,10 @@ extern void freeimg(img_t *data)
     }
     data->w=data->h=0;
 }
+/* remove tack lost match index-----------------------------------------------*/
+extern void rmmatchindex(const int index)
+{
+    hash_find(&hash,index);
+}
+
 

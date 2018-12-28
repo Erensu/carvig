@@ -20,10 +20,11 @@
 #include "carvig.h"
 
 /* constants------------------------------------------------------------------*/
-#define REFINE                 1         /* tracking refine feature points */
+#define REFINE                 0         /* tracking refine feature points */
 #define OUTPUT_PPM             1         /* output tracking data to ppm file */
 #define HASH_FIND_TRACK        1         /* find track index from hash table */
 #define REPLACE_LOST_FEATURE   1         /* replace lost track feature in `struct: track_t' */
+#define MAX_NUM_IMG            16        /* max number of image buffer */
 
 /* type definitions ----------------------------------------------------------*/
 typedef struct hashtable {        /* hash table type */
@@ -31,9 +32,15 @@ typedef struct hashtable {        /* hash table type */
     UT_hash_handle hh;            /* makes this structure hashable */
 } hashtable_t;
 
+typedef struct {                  /* image data buffer type */
+    int index;                    /* index of current image */
+    img_t imgbuf[MAX_NUM_IMG];    /* image data buffer */
+} imgbuf_t;
+
 /* global variables-----------------------------------------------------------*/
 static long int id_seed=1;        /* generate a new feature id */
 static hashtable_t *hash=NULL;    /* hash table storing all track feature index in `struct:track_t' */
+static imgbuf_t imgbuf={0};       /* image data buffer */
 
 /* add element to hash table---------------------------------------------------*/
 static void hash_add(hashtable_t **ht,const int index,int last_idx)
@@ -87,7 +94,6 @@ extern int inittrack(trackd_t *data,const voopt_t *opt)
     data->ts=data->te=t0;
     data->n=data->nmax=0; data->uid=id_seed++;
     data->data=NULL;
-    data->I   =NULL;
     return 1;
 }
 /* find a track in tracking set data------------------------------------------*/
@@ -104,8 +110,9 @@ static int findtrack(const track_t *track,const match_point *mp)
 #endif
 }
 /* copy image data------------------------------------------------------------*/
-static int copyimg(img_t *out,const img_t *in)
+static void copyimg(img_t *out,const img_t *in)
 {
+    if (in==NULL) return;
     out->data=(unsigned char*)malloc(sizeof(unsigned char)*in->w*in->h);
     memcpy(out->data,in->data,sizeof(unsigned char)*in->w*in->h);
     out->h=in->h;
@@ -113,9 +120,8 @@ static int copyimg(img_t *out,const img_t *in)
     out->time=in->time;
 }
 /* add new feature and image data to track------------------------------------*/
-static int addnewfeatimg(trackd_t *track,const feature *feat,const img_t *img)
+static int addnewfeatimg(trackd_t *track,const feature *feat)
 {
-    img_t *img_data; int i;
     feature *obs_data;
 
     if (track->nmax<=track->n) {
@@ -127,20 +133,7 @@ static int addnewfeatimg(trackd_t *track,const feature *feat,const img_t *img)
             return -1;
         }
         track->data=obs_data;
-#if TRACE_TRACK
-        if (!(img_data=(img_t*)realloc(track->I,sizeof(img_t)*track->nmax))) {
-            for (i=0;i<track->n;i++) free(track->I[i].data); track->I[i].data=NULL;
-
-            free(track->I); track->I=NULL;
-            track->n=track->nmax=0;
-            return -1;
-        }
-        track->I=img_data;
-#endif
     }
-#if TRACE_TRACK
-    copyimg(&track->I[track->n],img);
-#endif
     track->data[track->n++]=*feat;
     return 1;
 }
@@ -173,8 +166,7 @@ static int indexofrptrack(track_t *track)
 }
 /* create a new track---------------------------------------------------------*/
 static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame,
-                    const voopt_t *opt,track_t *track,
-                    const img_t *pimg,const img_t *cimg)
+                    const voopt_t *opt,track_t *track)
 {
     int index;
 
@@ -194,7 +186,7 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
 
     /* add track feature. */
     inittrack(&ntrack,opt);
-    addnewfeatimg(&ntrack,&fp,pimg); addnewfeatimg(&ntrack,&fc,cimg);
+    addnewfeatimg(&ntrack,&fp); addnewfeatimg(&ntrack,&fc);
 
     /* update frame id */
     ntrack.first_frame=curr_frame-1;
@@ -202,7 +194,7 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
     ntrack.last_idx   =mp->ic;
     ntrack.ts=tp;
     ntrack.te=tc;
-    ntrack.flag=1;
+    ntrack.flag=TRACK_NEW;
 
     /* add new track to track table */
     if (addnewtrack(track,&ntrack)<=0) {
@@ -212,6 +204,11 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
     /* add `index' to hash table */
     hash_add(&hash,track->n-1,ntrack.last_idx);
     return track->n-1;
+}
+/* add image data to image buffer---------------------------------------------*/
+static void addimg2buf(const img_t *data)
+{
+    copyimg(&imgbuf.imgbuf[imgbuf.index++%MAX_NUM_IMG],data);
 }
 /* matched feature points set data convert to track set-----------------------
  * args:  match_set *set   I  matched feature points set data
@@ -241,19 +238,23 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         for (i=0;i<mset->n;i++) {
 
             /* create a new track */
-            newtrack(&mset->data[i],tp,tc,curr_frame,opt,track,pimg,cimg);
+            newtrack(&mset->data[i],tp,tc,curr_frame,opt,track);
 
             /* update index */
             track->newtrack[track->nnew]=i;
             track->nnew++;
         }
+        /* add image data to buffer */
+        if (pimg) addimg2buf(pimg);
+        if (cimg) addimg2buf(cimg);
         return 1;
     }
+    /* update feature point tracks data */
     for (i=0;i<mset->n;i++) {
         if ((idx=findtrack(track,&mset->data[i]))<0) {
 
             /* create a new track */
-            if ((idx=newtrack(&mset->data[i],tp,tc,curr_frame,opt,track,pimg,cimg))<0) return 0;
+            if ((idx=newtrack(&mset->data[i],tp,tc,curr_frame,opt,track))<0) return 0;
 
             /* update index */
             track->newtrack[track->nnew]=idx;
@@ -270,7 +271,7 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
 
         feat.time=tc;
         feat.valid=1; feat.status=FEAT_CREATE;
-        addnewfeatimg(&track->data[idx],&feat,cimg);
+        addnewfeatimg(&track->data[idx],&feat);
 
         /* track flag. */
         track->data[idx].last_idx  =mset->data[i].ic;
@@ -279,28 +280,24 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         /* add `index' to hash table */
         hash_add(&hash,idx,track->data[idx].last_idx);
 
-        /* timestamp */
-        track->data[idx].te=tc;
+        track->data[idx].te=tc; /* timestamp */
 
         /* update index */
         track->updtrack[track->nupd]=idx;
         track->nupd++;
 
-        track->data[idx].flag=0;
+        track->data[idx].flag=TRACK_UPDATED;
     }
+    /* add image data to buffer */
+    addimg2buf(cimg);
     return track->n>0;
 }
 /* free tracking--------------------------------------------------------------*/
 extern void freetrack(trackd_t *track)
 {
     trace(3,"freetrack:\n");
-
-    int i;
     if (track->data) {
         free(track->data); track->data=NULL;
-    }
-    if (track->I) {
-        for (i=0;i<track->n;i++) free(track->I[i].data);
     }
     track->n=track->nmax=0;
     track->first_frame=0;
@@ -372,7 +369,7 @@ extern void feat2ppm(feature *featurelist, int nfeature,unsigned char *greyimg,
 extern void tracetrack(const track_t *track)
 {
     char dir[126],path[126];
-    trackd_t *pta;
+    trackd_t *pta; img_t *imgp;
     int i,j;
 
     trace(3,"tracetrack: n=%d\n",track->n);
@@ -396,9 +393,11 @@ extern void tracetrack(const track_t *track)
         }
         for (j=0;j<pta->n;j++) {
 
+            if (!(imgp=getimgdata(pta->data[j].time))) continue;
+
             sprintf(path,"%s/%d.ppm",dir,j);
-            feat2ppm(&pta->data[j],1,pta->I[j].data,pta->I[j].w,
-                     pta->I[j].h,path);
+            feat2ppm(&pta->data[j],1,imgp->data,imgp->w,
+                     imgp->h,path);
         }
 #endif
     }
@@ -437,6 +436,33 @@ extern int outofview(const track_t *track,const voopt_t *opt,int id,gtime_t time
         if (fabs(timediff(time,pt->data[i].time))<1E-6) return 1;
     }
     return 0;
+}
+/* initial track image data buffer--------------------------------------------*/
+extern void inittrackimgbuf(const voopt_t *opt)
+{
+    gtime_t t0={0};
+    int i;
+    trace(3,"inittrackimgbuf:\n");
+
+    for (i=0;i<MAX_NUM_IMG;i++) {
+        initimg(imgbuf.imgbuf+i,opt->match.img_w,opt->match.img_h,t0);
+    }
+}
+/* free track image data buffer-----------------------------------------------*/
+extern void freetrackimgbuf()
+{
+    trace(3,"freetrackimgbuf:\n");
+    int i;
+    for (i=0;i<MAX_NUM_IMG;i++) freeimg(imgbuf.imgbuf+i);
+}
+/* get image data pointer from image data buffer------------------------------*/
+extern img_t* getimgdata(gtime_t time)
+{
+    int i;
+    for (i=0;i<MAX_NUM_IMG;i++) {
+        if (fabs(timediff(time,imgbuf.imgbuf[i].time))<1E-5) return &imgbuf.imgbuf[i];
+    }
+    return NULL;
 }
 
 

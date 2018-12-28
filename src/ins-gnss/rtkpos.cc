@@ -2805,14 +2805,14 @@ extern int rtkpos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav)
         insopt->tc=INSTC_DGPS;
         stat=relpos(rtk,opt->adjobs?obsd:obs,nu,nr,nav);
         insopt->tc=INSTC_RTK;
-        if (stat) goto OUTSOL;
+        if (stat) goto outsol;
     }
     /* degrade to single-tc mode if dgps-tc fail */
     if (stat==0&&opt->mode==PMODE_INS_TGNSS) {
         stat=pntpos(opt->adjobs?obsd:obs,nu,nav,&rtk->opt,&rtk->sol,&rtk->ins,NULL,NULL,msg);
-        goto OUTSOL;
+        goto outsol;
     }
-OUTSOL:
+outsol:
 #endif
     outsolstat(rtk);
     return stat;

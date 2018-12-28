@@ -316,6 +316,12 @@ extern "C"{
 
 #define FEAT_CREATE           0         /* feature point status: created */
 
+#define TRACK_UPDATED         0         /* feature point track flag: updated */
+#define TRACK_NEW             1         /* feature point track flag: new track */
+#define TRACK_LOST            2         /* feature point track flag: track lost */
+#define TRACK_FILTER          3         /* feature point track flag: have used to filter */
+#define TRACK_INIT            4         /* feature point track flag: initial feture point position */
+
 #define KLT_INIT              1         /* KLT track status: initial */
 #define KLT_TRACKED           0         /* KLT track status: tracked */
 #define KLT_NOT_FOUND        -1         /* KLT track status: not found */
@@ -757,15 +763,15 @@ typedef struct trackd {         /* feature points track record */
     int last_idx,first_frame,last_frame;
                                 /* last feature point index/first frame index/last frame index of this track */
     unsigned char flag;         /*
-                                 * 0: updated track,
-                                 * 1: new track,
-                                 * 2: track lost,
-                                 * 3: bad track,
-                                 * 4: have used to filter
+                                 * 0: updated track                  --TRACK_UPDATED
+                                 * 1: new track,                     --TRACK_NEW
+                                 * 2: track lost,                    --TRACK_LOST
+                                 * 3: bad track,                     --TRACK_BAD
+                                 * 4: have used to filter            --TRACK_FILTER
+                                 * 5: initial feature point position --TRACK_INIT
                                  * */
     int uid;                    /* a unique identifier of this track */
     struct feature *data;       /* track feature data */
-    img_t   *I;                 /* store tracking image data for debugs */
     double xyz[3];              /* feature position in ecef */
 } trackd_t;
 
@@ -807,7 +813,7 @@ typedef struct {                /* visual odometry matching options */
 typedef struct match_point {    /* match feature point type */
     float up,vp;                /* u,v-coordinates in previous image */
     float uc,vc;                /* u,v-coordinates in current image */
-    int id,ip,ic;               /* feature id/feature index in precious/current image(for tracking) */
+    int ip,ic;                  /* feature id/feature index in precious/current image(for tracking) */
     int kltstat;                /* KLT track status (if KLT enable) */
 } match_point_t;
 
@@ -2486,6 +2492,8 @@ EXPORT double satazel(const double *pos, const double *e, double *azel);
 EXPORT double geodist(const double *rs, const double *rr, double *e);
 EXPORT void dops(int ns, const double *azel, double elmin, double *dop);
 EXPORT void csmooth(obs_t *obs, int ns);
+EXPORT double uravalue(int sys, int sva);
+EXPORT int uraindex(double value, int sys);
 
 /* atmosphere models ---------------------------------------------------------*/
 EXPORT double ionmodel(gtime_t t, const double *ion, const double *pos,
@@ -2627,6 +2635,8 @@ EXPORT int input_ubxm8 (raw_t *raw, unsigned char data);
 EXPORT int input_ubxsol(raw_t *raw, unsigned char data);
 EXPORT int input_rinex (raw_t *raw, unsigned char data);
 EXPORT int input_m39_mix(raw_t *raw, unsigned char data);
+EXPORT int input_sbp(raw_t *raw, uint8_t data);
+EXPORT int input_cnav(raw_t *raw, unsigned char data);
 
 EXPORT int input_oem6f_sol (raw_t *raw, FILE *fp);
 EXPORT int input_oem6f_pose(raw_t *raw, FILE *fp);
@@ -2651,6 +2661,9 @@ EXPORT int input_m39f   (raw_t *raw, FILE *fp);
 EXPORT int input_ubxm8f (raw_t *raw, FILE *fp);
 EXPORT int input_ubxsolf (raw_t *raw,FILE *fp);
 EXPORT int input_m39_mixf(raw_t *raw,FILE *fp);
+EXPORT int input_sbpjsonf(raw_t *raw, FILE *fp);
+EXPORT int input_sbpf(raw_t *raw, FILE *fp);
+EXPORT int input_cnavf(raw_t *raw, FILE *fp);
 EXPORT int gen_ubx (const char *msg, unsigned char *buff);
 EXPORT int gen_stq (const char *msg, unsigned char *buff);
 EXPORT int gen_nvs (const char *msg, unsigned char *buff);
@@ -3173,6 +3186,7 @@ EXPORT int matchfeats(match_t *pmatch,const img_t *img);
 EXPORT void init_match(match_t *match,const matchopt_t *opt);
 EXPORT void free_match(match_t *match);
 EXPORT void free_match_set(match_set_t *mset);
+EXPORT void rmmatchindex(const int index);
 
 /* visual odometry estimator--------------------------------------------------*/
 EXPORT int estmonort(const voopt_t *opt,const match_set_t *feat,double *Tr);
@@ -3221,6 +3235,9 @@ EXPORT void drawtrackd(const trackd_t *track,const voopt_t *opt);
 EXPORT trackd_t *gettrack(const track_t *track,int uid);
 EXPORT int outofview(const track_t *track,const voopt_t *opt,
                      int id,gtime_t time);
+EXPORT void inittrackimgbuf(const voopt_t *opt);
+EXPORT void freetrackimgbuf();
+EXPORT img_t* getimgdata(gtime_t time);
 
 /* pnp pose estimate function------------------------------------------------*/
 EXPORT int p3pthree(const feature *feats,int nf,double *xp,int np,
@@ -3255,6 +3272,11 @@ EXPORT void initcamposevar(const insopt_t *opt,insstate_t *ins,vostate_t *vo);
 
 EXPORT void rt2tf(const double *R,const double *t,double *T);
 EXPORT void tf2rt(const double *T,double *R,double *t);
+
+EXPORT int predictfeat(const double *R,const double *t,const double *K,
+                       const double *uv,double *uvp);
+EXPORT int getcamerapose(gtime_t time,double *R,double *t);
+EXPORT int getfeaturepos(trackd_t *feat,gtime_t time,double *pf);
 
 /* ins-gnss-vo coupled post-processing----------------------------------------*/
 EXPORT int igvopostpos(const gtime_t ts, gtime_t te, double ti, double tu,
