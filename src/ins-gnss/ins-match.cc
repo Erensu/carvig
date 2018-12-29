@@ -127,6 +127,9 @@ static void hash_add(hashtable_t **ht,int last_idx)
         s->flag=0;
         HASH_ADD_INT(*ht,last_idx,s);
     }
+    else {
+        trace(2,"hash element exist\n");
+    }
 }
 /* find an element for given value---------------------------------------------*/
 static void hash_deteleflag(hashtable_t **ht,int flag)
@@ -135,8 +138,11 @@ static void hash_deteleflag(hashtable_t **ht,int flag)
     HASH_ITER(hh,*ht,current,tmp) {
 
         if (current->flag==flag) {
-            HASH_DEL(*ht,current);  /* delete; users advances to next */
-            free(current);          /* optional- if you want to free  */
+            HASH_DEL(*ht,current); /* delete; users advances to next */
+            free(current);         /* optional- if you want to free  */
+        }
+        else {
+            current->flag=0; /* reset flag */
         }
     }
 }
@@ -1430,6 +1436,9 @@ static void buketfeatnew(const matchopt_t *opt,const match_set_t *mp_dense,
     }
     if (num==0) return;
 
+    /* refill p_matched from buckets */
+    free_match_set(mp_bucket);
+
     /* add matches from hash table */
     for (i=0;i<num;i++) {
         add_match_set_match_point(mp_bucket,&mp_dense->data[index[i]]);
@@ -1441,6 +1450,9 @@ static void buketfeatnew(const matchopt_t *opt,const match_set_t *mp_dense,
             s->flag=1;
         }
     }
+#if TRACR_FEAT_POINTS
+    trace_match_points(mp_bucket);
+#endif
     /* delete redundant elements in hash table */
     hash_deteleflag(&hash,0);
 

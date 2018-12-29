@@ -3321,6 +3321,7 @@ EXPORT void vt_closelog(vt_t *vt);
 
 /* interface for opencv library-----------------------------------------------*/
 EXPORT void dipsplyimg(const img_t *img);
+EXPORT void drawalltrack(const track_t *track);
 
 #ifdef __cplusplus
 }

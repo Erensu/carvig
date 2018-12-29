@@ -49,10 +49,18 @@ static void hash_add(hashtable_t **ht,const int index,int last_idx)
     HASH_FIND_INT(*ht,&last_idx,s);  /* id already in the hash? */
     if (s==NULL) {
 
+        /* new track feature match index */
         s=(struct hashtable *)malloc(sizeof(struct hashtable));
         s->last_idx=last_idx;
         s->index=index;
         HASH_ADD_INT(*ht,last_idx,s);
+    }
+    else {
+        trace(2,"hash element have exist\n");
+
+        /* replace this element if it track lost */
+        s->index=index;
+        s->last_idx=last_idx;
     }
 }
 /* delete hash table-----------------------------------------------------------*/
@@ -78,9 +86,17 @@ static int hash_findtrack(hashtable_t **ht,const int last_idx)
 
     HASH_FIND_INT(*ht,&last_idx,s);  /* s: output pointer */
     if (s==NULL) return -1;
-
     index=s->index;
     HASH_DEL(*ht,s); return index;
+    return s->index;
+}
+/* find element in hash table-------------------------------------------------*/
+static hashtable *hash_find(hashtable_t **ht,const int last_idx)
+{
+    struct hashtable *s=NULL;
+
+    HASH_FIND_INT(*ht,&last_idx,s);  /* s: output pointer */
+    return s;
 }
 /* initial track---------------------------------------------------------------
  * args:    trackd_t *data  IO  track set data
@@ -117,6 +133,7 @@ static void copyimg(img_t *out,const img_t *in)
     memcpy(out->data,in->data,sizeof(unsigned char)*in->w*in->h);
     out->h=in->h;
     out->w=in->w;
+    out->id=in->id;
     out->time=in->time;
 }
 /* add new feature and image data to track------------------------------------*/
@@ -201,8 +218,6 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
         trace(2,"add new track fail\n");
         return 0;
     }
-    /* add `index' to hash table */
-    hash_add(&hash,track->n-1,ntrack.last_idx);
     return track->n-1;
 }
 /* add image data to image buffer---------------------------------------------*/
@@ -244,6 +259,12 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
             track->newtrack[track->nnew]=i;
             track->nnew++;
         }
+        /* update hash table */
+        for (i=0;i<track->nnew;i++) {
+
+            /* add match index to hash table */
+            hash_add(&hash,track->newtrack[i],track->data[track->newtrack[i]].last_idx);
+        }
         /* add image data to buffer */
         if (pimg) addimg2buf(pimg);
         if (cimg) addimg2buf(cimg);
@@ -276,17 +297,20 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         /* track flag. */
         track->data[idx].last_idx  =mset->data[i].ic;
         track->data[idx].last_frame=curr_frame;
-
-        /* add `index' to hash table */
-        hash_add(&hash,idx,track->data[idx].last_idx);
-
         track->data[idx].te=tc; /* timestamp */
 
         /* update index */
-        track->updtrack[track->nupd]=idx;
-        track->nupd++;
-
+        track->updtrack[track->nupd++]=idx;
         track->data[idx].flag=TRACK_UPDATED;
+    }
+    /* update match index in hash table */
+    for (i=0;i<track->nnew;i++) {
+
+        /* add match index to hash table */
+        hash_add(&hash,track->newtrack[i],track->data[track->newtrack[i]].last_idx);
+    }
+    for (i=0;i<track->nupd;i++) {
+        hash_add(&hash,track->newtrack[i],track->data[track->newtrack[i]].last_idx);
     }
     /* add image data to buffer */
     addimg2buf(cimg);

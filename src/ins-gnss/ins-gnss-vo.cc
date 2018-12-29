@@ -1311,6 +1311,9 @@ static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
     if (!updatetrack(opt,img)) return 0;
     if (!updatecamtrack(opt,img->time,matchs.Ip.id,img->id)) return 0;
 
+    /* draw all feature track */
+    drawalltrack(&tracks);
+
     /* update camera/ins states */
     updatefeatmeas(opt,ins,img->time);
 

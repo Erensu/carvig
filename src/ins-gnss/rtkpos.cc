@@ -1102,7 +1102,23 @@ static void zdres_sat(int base, double r, const obsd_t *obs, const nav_t *nav,
         }
     }
 }
-/* undifferenced phase/code residuals ----------------------------------------*/
+/* undifferenced phase/code residuals ----------------------------------------
+ * calculate zero diff residuals [observed pseudorange - range]
+ * output is in y[0:nu-1], only shared input with base is nav
+ * args:   I   base:  0=base,1=rover
+ *         I   obs  = sat observations
+ *         I   n    = # of sats
+ *         I   rs [(0:2)+i*6]= sat position {x,y,z} (m)
+ *         I   dts[(0:1)+i*2]= sat clock {bias,drift} (s|s/s)
+ *         I   svh  = sat health flags
+ *         I   nav  = sat nav data
+ *         I   rr   = rcvr pos (x,y,z)
+ *         I   opt  = options
+ *         I   index: 0=base,1=rover
+ *         O   y[(0:1)+i*2] = zero diff residuals {phase,code} (m)
+ *         O   e    = line of sight unit vectors to sats
+ *         O   azel = [az, el] to sats
+ *-----------------------------------------------------------------------------*/
 static int zdres(int base, const obsd_t *obs, int n, const double *rs,
                  const double *dts, const int *svh, const nav_t *nav,
                  const double *rr, const prcopt_t *opt, int index, double *y,
@@ -1174,7 +1190,15 @@ static int chkfrq(const obsd_t *obs,const prcopt_t *opt)
     /* only check two frequency for phase observation data */
     int i; for (i=0;i<NF(opt);i++) if (obs->L[i]==0.0) return 0; return 1;
 }
-/* double-differenced measurement error covariance ---------------------------*/
+/* double-differenced measurement error covariance ---------------------------
+ *
+ *   nb[n]:  # of sat pairs in group
+ *   n:      # of groups (2 for each system, phase and code)
+ *   Ri[nv]: variances of first sats in double diff pairs
+ *   Rj[nv]: variances of 2nd sats in double diff pairs
+ *   nv:     total # of sat pairs
+ *   R[nv][nv]:  double diff measurement err covariance matrix
+ * ---------------------------------------------------------------------------*/
 static void ddcov(const int *nb, int n, const double *Ri, const double *Rj,
                   int nv, double *R)
 {
@@ -1372,7 +1396,25 @@ static int chknews(const rtk_t *rtk,int sat1,int sat2,int freq)
     }
     if (rtk->ns==0) return 0; return 1;
 }
-/* double-differenced phase/code residuals -----------------------------------*/
+/* double-differenced residuals and partial derivatives  ---------------------
+ *       O  rtk->ssat[i].resp[j] = residual pseudorange error
+ *       O  rtk->ssat[i].resc[j] = residual carrier phase error
+ *       I  rtk->rb= base location
+ *       I  nav  = sat nav data
+ *       I  dt = time diff between base and rover observations (usually 0)
+ *       I  x = rover pos & vel and sat phase biases (float solution)
+ *       I  P = error covariance matrix of float states
+ *       I  sat = list of common sats
+ *       I  y = zero diff residuals (code and phase, base and rover)
+ *       I  e = line of sight unit vectors to sats
+ *       I  azel = [az, el] to sats
+ *       I  iu,ir = user and ref indices to sats
+ *       I  ns = # of sats
+ *       O  v = double diff innovations (measurement-model) (phase and code)
+ *       O  H = linearized translation from innovations to states (az/el to sats)
+ *       O  R = measurement error covariances
+ *       O  vflg = bit encoded list of sats used for each double diff
+ *----------------------------------------------------------------------------*/
 static int ddres(rtk_t *rtk, const nav_t *nav, const obsd_t *obs, double dt,
                  const double *x, const double *P, const int *sat, double *y,
                  double *e, double *azel, const int *iu, const int *ir, int ns,
@@ -2157,7 +2199,13 @@ static int valins(const prcopt_t *opt,const double *x)
     }
     return 1;
 }
-/* relative positioning ------------------------------------------------------*/
+/* relative positioning ------------------------------------------------------
+ *  args:   rtk      IO      gps solution structure
+ *          obs      I       satellite observations
+ *          nu       I       # of user observations (rover)
+ *          nr       I       # of ref observations  (base)
+ *          nav      I       satellite navigation data
+ *----------------------------------------------------------------------------*/
 static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav)
 {
     prcopt_t *opt=&rtk->opt;

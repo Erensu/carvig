@@ -132,4 +132,109 @@ extern void dipsplyimg(const img_t *img)
     cv::imshow("Display-Image",outImage);
     cv::waitKey(5);
 }
+/*----------------------------------------------------------------------------
+ *　Combines two images by scacking one on right of the other
+ *
+ *　@param img1 left image
+ *　@param img2 right image
+ *
+ *　@return Returns the image resulting from stacking \a img1 on top if \a img2
+ *----------------------------------------------------------------------------*/
+static IplImage* stack_imgs(IplImage* img1,IplImage* img2)
+{
+    IplImage* stacked=cvCreateImage(cvSize(MAX(img1->height,img2->height),img1->width+img2->width),
+                                    IPL_DEPTH_8U,3);
+    cvZero(stacked);
+    cvSetImageROI(stacked,cvRect(0,0,img1->width,img1->height));
+    cvAdd(img1,stacked,stacked,NULL);
+    cvSetImageROI(stacked,cvRect(img2->width,0,img2->width,img2->height));
+    cvAdd(img2,stacked,stacked,NULL);
+    cvResetImageROI(stacked);
+    return stacked;
+}
+/* draw all track data for debugs--------------------------------------------*/
+extern void drawalltrack(const track_t *track)
+{
+    static int first=1;
+    img_t *imgp1,*imgp2;
+    gtime_t t1={0},t2={0};
+    int i;
+    char text[256];
+
+    if (track->nnew) {
+        t1=track->data[track->newtrack[0]].ts;
+        t2=track->data[track->newtrack[0]].te;
+    }
+    else if (track->nupd) {
+        t1=track->data[track->updtrack[0]].data[0].time;
+        t2=track->data[track->updtrack[0]].data[track->data[track->updtrack[0]].n-1].time;
+    }
+    if (!(imgp1=getimgdata(t1))||!(imgp2=getimgdata(t2))) {
+        return;
+    }
+    cv::Mat I1(imgp1->h,imgp1->w,CV_8UC3);
+    img2Img(imgp1,I1);
+    sprintf(text,"id=%d",imgp1->id);
+    cv::putText(I1,text,cv::Point(8,15),cv::FONT_HERSHEY_PLAIN,1.0,cv::Scalar(0,255,255));
+
+    cv::Mat I2(imgp2->h,imgp2->w,CV_8UC3);
+    img2Img(imgp2,I2);
+    sprintf(text,"id=%d",imgp2->id);
+    cv::putText(I2,text,cv::Point(8,15),cv::FONT_HERSHEY_PLAIN,1.0,cv::Scalar(0,255,255));
+
+    cv::Mat I(MAX(imgp1->h,imgp2->h),imgp1->w+imgp2->w,CV_8UC3);
+    cv::Mat ROI1=I(Rect(0,0,imgp1->w,MAX(imgp1->h,imgp2->h)));
+    I1.copyTo(ROI1);
+    cv::Mat ROI2=I(Rect(imgp1->w,0,imgp2->w,MAX(imgp1->h,imgp2->h)));
+    I2.copyTo(ROI2);
+
+    cv::Mat II(MAX(imgp1->h,imgp2->h),imgp1->w+imgp2->w,CV_8UC3);
+    I.copyTo(II);
+
+    if (first) {
+        cv::namedWindow("All-Match-Image-Display",CV_WINDOW_AUTOSIZE);
+        first=0;
+    }
+    for (i=0;i<track->nnew;i++) {
+
+        cv::Point p1;
+        p1.x=(int)track->data[track->newtrack[i]].data[0].u;
+        p1.y=(int)track->data[track->newtrack[i]].data[0].v;
+        cv::circle(I,p1,2,cv::Scalar(0,0,255),1);
+
+        cv::Point p2;
+        p2.x=(int)track->data[track->newtrack[i]].data[1].u+imgp1->w;
+        p2.y=(int)track->data[track->newtrack[i]].data[1].v;
+        cv::circle(I,p2,2,cv::Scalar(0,255,0),1);
+
+        cv::Mat overlay;
+        I.copyTo(overlay);
+
+        cv::line(overlay,p1,p2,CV_RGB(255,0,255),1,8,0);
+        cv::addWeighted(overlay,0.2,I,0.8,0,I);
+    }
+    cv::imshow("All-Match-Image-Display",I);
+    cv::waitKey(0);
+    
+    for (i=0;i<track->nupd;i++) {
+        cv::Point p1;
+        p1.x=(int)track->data[track->updtrack[i]].data[track->data[track->updtrack[i]].n-2].u;
+        p1.y=(int)track->data[track->updtrack[i]].data[track->data[track->updtrack[i]].n-2].v;
+        cv::circle(II,p1,2,cv::Scalar(0,0,255),1);
+
+        cv::Point p2;
+        p2.x=(int)track->data[track->updtrack[i]].data[track->data[track->updtrack[i]].n-1].u+imgp1->w;
+        p2.y=(int)track->data[track->updtrack[i]].data[track->data[track->updtrack[i]].n-1].v;
+        cv::circle(II,p2,2,cv::Scalar(0,255,0),1);
+
+        cv::Mat overlay;
+        II.copyTo(overlay);
+
+        cv::line(overlay,p1,p2,CV_RGB(255,0,0),1,8,0);
+        cv::addWeighted(overlay,0.2,II,0.8,0,II);
+    }
+    cv::imshow("All-Match-Image-Display",II);
+    cv::waitKey(0);
+}
+
 

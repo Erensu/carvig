@@ -5,7 +5,6 @@
 * history : 2017/03/08  1.0  new
 *----------------------------------------------------------------------------*/
 #include <carvig.h>
-#include <include/carvig.h>
 
 /* constants/macros ---------------------------------------------------------*/
 #define M39SYNC1   0x55        /* m39-mix message start sync code 1 */
