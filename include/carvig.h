@@ -807,6 +807,10 @@ typedef struct {                /* visual odometry matching options */
     int half_res;               /* 0=disabled,1=match at half resolution, refine at full resolution */
     int refine;                 /* refinement (0=none,1=pixel,2=sub-pixel) */
     double f,fu,fv,cu,cv,base;  /* calibration parameters (only for match prediction) */
+    int roi[2][2];              /* match image ROI options:
+                                 * roi[0]: (left-top),
+                                 * roi[1]: (right-bottom)
+                                 * */
     bucketopt_t bucket;         /* bucketing parameters */
 } matchopt_t;
 
@@ -3277,6 +3281,7 @@ EXPORT int predictfeat(const double *R,const double *t,const double *K,
                        const double *uv,double *uvp);
 EXPORT int getcamerapose(gtime_t time,double *R,double *t);
 EXPORT int getfeaturepos(trackd_t *feat,gtime_t time,double *pf);
+EXPORT int inroi(const float u,const float v,const matchopt_t *opt);
 
 /* ins-gnss-vo coupled post-processing----------------------------------------*/
 EXPORT int igvopostpos(const gtime_t ts, gtime_t te, double ti, double tu,

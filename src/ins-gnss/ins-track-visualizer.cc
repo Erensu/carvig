@@ -130,7 +130,7 @@ extern void dipsplyimg(const img_t *img)
 
     cv::putText(outImage,text,cv::Point(8,15),cv::FONT_HERSHEY_PLAIN,1.0,cv::Scalar(0,255,255));
     cv::imshow("Display-Image",outImage);
-    cv::waitKey(5);
+    cv::waitKey(3);
 }
 /*----------------------------------------------------------------------------
  *　Combines two images by scacking one on right of the other

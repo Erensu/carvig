@@ -347,6 +347,10 @@ EXPORT opt_t insopts[]={
     {"ins-vo-aid-match-disp_tol"  ,0,(void *)&prcopt_.insopt.voopt.match.match_disp_tol,  ""},
     {"ins-vo-aid-outlier-disp_tol",0,(void *)&prcopt_.insopt.voopt.match.outlier_disp_tol,""},
     {"ins-vo-aid-outlier-flow_tol",0,(void *)&prcopt_.insopt.voopt.match.outlier_flow_tol,""},
+    {"ins-vo-aid-match-roi1",      0,(void *)&prcopt_.insopt.voopt.match.roi[0][0],""},
+    {"ins-vo-aid-match-roi2",      0,(void *)&prcopt_.insopt.voopt.match.roi[0][1],""},
+    {"ins-vo-aid-match-roi3",      0,(void *)&prcopt_.insopt.voopt.match.roi[1][0],""},
+    {"ins-vo-aid-match-roi4",      0,(void *)&prcopt_.insopt.voopt.match.roi[1][1],""},
 
     {"ins-vo-aid-multi-stage",0,(void *)&prcopt_.insopt.voopt.match.multi_stage},
     {"ins-vo-aid-half-res"   ,0,(void *)&prcopt_.insopt.voopt.match.half_res   },

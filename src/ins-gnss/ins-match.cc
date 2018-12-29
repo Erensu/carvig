@@ -38,6 +38,7 @@
 #define TRACR_FEAT_POINTS    1       /* output feature points for debugs */
 #define MATCH_RATIO          3.0     /* ratio of min-cost to second-min-cost */
 #define USE_NEW_BUCKET       1       /* use new bucket feature exctract method */
+#define CHK_MATCH_ROI        1       /* check match ROI options */
 
 /* type definitions ----------------------------------------------------------*/
 typedef struct maximum {             /* structure for storing interest points */
@@ -84,10 +85,7 @@ typedef struct area {
 } area_t;
 
 typedef struct hashtable {           /* hash table type */
-    int last_idx,flag;               /* index of track feature for matching
-                                      * flag=0: new created
-                                      * flag=1: update `last_idx'
-                                      * */
+    int last_idx;                    /* index of track feature for matching */
     UT_hash_handle hh;               /* makes this structure hashable */
 } hashtable_t;
 
@@ -124,26 +122,10 @@ static void hash_add(hashtable_t **ht,int last_idx)
 
         s=(struct hashtable *)malloc(sizeof(struct hashtable));
         s->last_idx=last_idx;
-        s->flag=0;
         HASH_ADD_INT(*ht,last_idx,s);
     }
     else {
         trace(2,"hash element exist\n");
-    }
-}
-/* find an element for given value---------------------------------------------*/
-static void hash_deteleflag(hashtable_t **ht,int flag)
-{
-    struct hashtable *current,*tmp;
-    HASH_ITER(hh,*ht,current,tmp) {
-
-        if (current->flag==flag) {
-            HASH_DEL(*ht,current); /* delete; users advances to next */
-            free(current);         /* optional- if you want to free  */
-        }
-        else {
-            current->flag=0; /* reset flag */
-        }
     }
 }
 /* delete hash table-----------------------------------------------------------*/
@@ -155,6 +137,7 @@ static void hash_delete(hashtable_t **ht)
         HASH_DEL(*ht,current);  /* delete; users advances to next */
         free(current);          /* optional- if you want to free  */
     }
+    *ht=NULL; /* delete */
 }
 /* counts of elements in hash table-------------------------------------------*/
 static int hash_counts(const struct hashtable *ht)
@@ -1405,6 +1388,12 @@ static void bucketfeat(const matchopt_t *opt,const match_set_t *mp_dense,
 
         n=getrand(buckets[i].n,maxnf>buckets[i].n?buckets[i].n:maxnf,rlist);
         for (j=0;j<n;j++) {
+#if CHK_MATCH_ROI
+            /* check match feature is in ROI? */
+            if (!inroi(buckets[i].data[rlist[j]].uc,buckets[i].data[rlist[j]].vc,opt)) continue;
+            if (!inroi(buckets[i].data[rlist[j]].up,buckets[i].data[rlist[j]].vp,opt)) continue;
+#endif
+            /* add match feature */
             add_match_set_match_point(mp_bucket,&buckets[i].data[rlist[j]]);
         }
         free(rlist);
@@ -1426,8 +1415,6 @@ static void buketfeatnew(const matchopt_t *opt,const match_set_t *mp_dense,
 
     /* first time to match feature */
     if (hash_counts(hash)<=0) {
-
-        /* bucket features point */
         bucketfeat(opt,mp_dense,mp_bucket,maxnf);
 
         /* add match index to hash table */
@@ -1439,23 +1426,26 @@ static void buketfeatnew(const matchopt_t *opt,const match_set_t *mp_dense,
     /* refill p_matched from buckets */
     free_match_set(mp_bucket);
 
+    /* remove all elements in hash table */
+    hash_delete(&hash);
+
     /* add matches from hash table */
     for (i=0;i<num;i++) {
+
+#if CHK_MATCH_ROI
+        /* check is in ROI? */
+        if (!inroi(mp_dense->data[index[i]].uc,mp_dense->data[index[i]].vc,opt)) continue;
+        if (!inroi(mp_dense->data[index[i]].up,mp_dense->data[index[i]].vp,opt)) continue;
+#endif
+        /* add match feature point */
         add_match_set_match_point(mp_bucket,&mp_dense->data[index[i]]);
 
         /* update hash table */
-        struct hashtable *s;
-        if ((s=hash_find(&hash,mp_dense->data[index[i]].ip))) {
-            s->last_idx=mp_dense->data[index[i]].ic;
-            s->flag=1;
-        }
+        hash_add(&hash,mp_dense->data[index[i]].ic);
     }
 #if TRACR_FEAT_POINTS
     trace_match_points(mp_bucket);
 #endif
-    /* delete redundant elements in hash table */
-    hash_deteleflag(&hash,0);
-
     /* add new matches to hash table */
     if (nnum==0) return;
     for (i=0;i<nnum;i++) {
@@ -1482,6 +1472,12 @@ static void buketfeatnew(const matchopt_t *opt,const match_set_t *mp_dense,
 
         n=getrand(buckets[i].n,maxnf>buckets[i].n?buckets[i].n:maxnf/2,rlist);
         for (j=0;j<n;j++) {
+
+#if CHK_MATCH_ROI
+            /* check is in ROI? */
+            if (!inroi(buckets[i].data[rlist[j]].uc,buckets[i].data[rlist[j]].vc,opt)) continue;
+            if (!inroi(buckets[i].data[rlist[j]].up,buckets[i].data[rlist[j]].vp,opt)) continue;
+#endif
             add_match_set_match_point(mp_bucket,&buckets[i].data[rlist[j]]);
 
             /* add to hash table */

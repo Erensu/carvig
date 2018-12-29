@@ -43,7 +43,7 @@ static hashtable_t *hash=NULL;    /* hash table storing all track feature index 
 static imgbuf_t imgbuf={0};       /* image data buffer */
 
 /* add element to hash table---------------------------------------------------*/
-static void hash_add(hashtable_t **ht,const int index,int last_idx)
+static int hash_add(hashtable_t **ht,const int index,int last_idx)
 {
     struct hashtable *s=NULL;
     HASH_FIND_INT(*ht,&last_idx,s);  /* id already in the hash? */
@@ -53,14 +53,14 @@ static void hash_add(hashtable_t **ht,const int index,int last_idx)
         s=(struct hashtable *)malloc(sizeof(struct hashtable));
         s->last_idx=last_idx;
         s->index=index;
-        HASH_ADD_INT(*ht,last_idx,s);
+        HASH_ADD_INT(*ht,last_idx,s); return -1;
     }
     else {
         trace(2,"hash element have exist\n");
 
         /* replace this element if it track lost */
         s->index=index;
-        s->last_idx=last_idx;
+        s->last_idx=last_idx; return index;
     }
 }
 /* delete hash table-----------------------------------------------------------*/
@@ -72,6 +72,7 @@ static void hash_delete(hashtable_t **ht)
         HASH_DEL(*ht,current);  /* delete; users advances to next */
         free(current);          /* optional- if you want to free  */
     }
+    *ht=NULL; /* delete */
 }
 /* counts of elements in hash table-------------------------------------------*/
 static int hash_counts(const struct hashtable *ht)
@@ -246,7 +247,7 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
     trace(3,"match2track:\n");
 
     /* initial flag of all track */
-    for (i=0;i<track->n;i++) track->data[i].flag=2;
+    for (i=0;i<track->n;i++) track->data[i].flag=TRACK_LOST;
 
     /* initial track */
     if (track->n==0) {
@@ -303,14 +304,16 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         track->updtrack[track->nupd++]=idx;
         track->data[idx].flag=TRACK_UPDATED;
     }
-    /* update match index in hash table */
-    for (i=0;i<track->nnew;i++) {
+    /* remove all elements in hash table */
+    hash_delete(&hash);
 
-        /* add match index to hash table */
+    /* add new match index in hash table */
+    for (i=0;i<track->nnew;i++) {
         hash_add(&hash,track->newtrack[i],track->data[track->newtrack[i]].last_idx);
     }
+    /* update match index in hash table */
     for (i=0;i<track->nupd;i++) {
-        hash_add(&hash,track->newtrack[i],track->data[track->newtrack[i]].last_idx);
+        hash_add(&hash,track->updtrack[i],track->data[track->updtrack[i]].last_idx);
     }
     /* add image data to buffer */
     addimg2buf(cimg);

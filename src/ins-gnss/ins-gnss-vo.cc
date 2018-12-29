@@ -465,6 +465,12 @@ static int addcurrenttrack(cams_t *cam)
     trace(3,"add new tracks: %d\n",tracks.nnew);
     trace(3,"update tracks: %d\n",tracks.nupd);
 
+    /* get number of tracking lost */
+    for (i=0,j=0;i<tracks.n;i++) {
+        if (tracks.data[i].flag==TRACK_LOST) j++;
+    }
+    trace(3,"track lost: %d\n",j);
+    
     /* add new track to camera tracking-feature list */
     for (i=0;i<tracks.nnew;i++) {
         j=tracks.newtrack[i];
@@ -701,7 +707,7 @@ static int prjmatrix(const double *C,const double *t,const double *K,double *P)
 static int bearingvector(const cams_t *cam,const insstate_t *ins,const double *uv,
                          const double *K,double *bv)
 {
-    double img_p[2],uimg_p[2],n; int i;
+    double img_p[2],uimg_p[2];;
     cam_t camp;
 
     trace(2,"bearingvector:\n");
@@ -1270,9 +1276,6 @@ static int updatefeatmeas(const insopt_t *opt,insstate_t *ins,gtime_t time)
             if (!hash_find_feature(vofilt.data[j].trackfeat,tracks.data[i].uid)) continue;
             hash_delete_feature(&vofilt.data[j].trackfeat,tracks.data[i].uid);
         }
-        /* remove match index in hash table */
-        rmmatchindex(tracks.data[i].last_idx);
-
         tracks.data[i].last_idx=-1;
         if (flag==0) continue;
 
@@ -1338,6 +1341,9 @@ extern int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
     switch (flag) {
         case 0: return propagate(&vofilt,ins); 
         case 1: return propagate(&vofilt,ins)&&updateall(ins,opt,img);
+        default: {
+            trace(2,"not support mode\n");
+        }
     }
     if (inss==NULL) inss=ins;
     if (opts==NULL) opts=opt;
@@ -1405,6 +1411,12 @@ extern int getcamerapose(gtime_t time,double *R,double *t)
         return 1;
     }
     return 0;
+}
+/* is in ROI------------------------------------------------------------------*/
+extern int inroi(const float u,const float v,const matchopt_t *opt)
+{
+    return u>opt->roi[0][0]&&u<opt->roi[1][0]&&
+           v>opt->roi[0][1]&&v<opt->roi[1][1];
 }
 
 
