@@ -23,6 +23,7 @@
 #define MAXDIFF      30.0         /* max time difference between solution */
 #define REBOOT       1            /* ins tightly coupled reboot if always update fail */
 #define CHKNUMERIC   1            /* check numeric for given value */
+#define RECHK_ATT    1            /* recheck attitude of imu body */
 
 /* solution convert to velocity----------------------------------------------*/
 static void sol2vel(const sol_t *sol1,const sol_t *sol2,double *v)
@@ -241,7 +242,7 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
             /* lack satellites but tightly-coupled run */
             if (ins->ns<4) ins->stat=INSS_LACK;
             savegmeas(ins,&rtk->sol,NULL);
-#if 1
+#if RECHK_ATT
             /* recheck attitude */
             rechkatt(ins,imu);
 #endif

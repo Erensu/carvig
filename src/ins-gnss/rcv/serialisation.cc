@@ -1,5 +1,5 @@
 /* --------------------------------------------------------------------------
- * serialisation.c
+ * serialisation.cc
  *
  *  Created on: 02.02.2013
  *      Author: thomas

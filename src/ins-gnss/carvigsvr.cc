@@ -13,8 +13,8 @@
 #define DTTOLM          0.1        /* threshold of rover and base observation data */
 #define REALTIME        0          /* real time process rover observation data */
 #define MAXTIMEDIFF     0.5        /* max time difference for suspend input stream */
-#define OUTSOLFRQ       100        /* frequency of output ins solutions */
-#define DTTOL_IMG       0.025      /* tolerance of time difference (s) */
+#define OUTSOLFRQ       5          /* frequency of output ins solutions */
+#define ONLY_COUPLED_VO 1          /* only coupled with imu and vision measurement data */
 
 #define NS(i,j,max)     ((((j)-1)%(max)-(i))<0?(((j)-1)%(max)-(i)+(max)):(((j)-1)%(max)-(i)))
 #define NE(i,j,max)     MAX(0,(((i)-(j))<0?((i)-(j)+(max)):((i)-(j))))
@@ -1621,9 +1621,7 @@ static void *rtksvrthread(void *arg)
                     }
                     else {
                         /* initial ins states from solutions */
-                        if (j==INSUPD_MEAS) {
-                            flag=insinitrt(svr,&psol,&imus.data[i]);
-                        }
+                        if (j==INSUPD_MEAS) flag=insinitrt(svr,&psol,&imus.data[i]);
                     }
                     /* initial ins states ok */
                     if (flag) {
@@ -1639,6 +1637,11 @@ static void *rtksvrthread(void *arg)
                         continue;
                     }
                 }
+#if !ONLY_COUPLED_VO
+                j=INSUPD_MEAS;
+#else
+                j=INSUPD_TIME;
+#endif
                 rtksvrlock(svr);
                 lcigpos(iopt,imus.data+i,ins,&gnss,j); /* loosely coupled position */
 

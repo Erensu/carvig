@@ -39,6 +39,8 @@
 #define MATCH_RATIO          3.0     /* ratio of min-cost to second-min-cost */
 #define USE_NEW_BUCKET       1       /* use new bucket feature exctract method */
 #define CHK_MATCH_ROI        1       /* check match ROI options */
+#define FAST_CORNERS         0       /* FAST corner detect */
+#define SCORE_THRESHOLD      20.0    /* Shi-Thoma score threshold */
 
 /* type definitions ----------------------------------------------------------*/
 typedef struct maximum {             /* structure for storing interest points */
@@ -375,14 +377,14 @@ static uint8_t* create_halt_resimg(uint8_t *I,const int32_t* dims)
 {
     int32_t dims_half[3],v,u;
     get_half_resolution_dims(dims,dims_half);
-    uint8_t* I_half=(uint8_t*)_mm_malloc(dims_half[2]*dims_half[1]*sizeof(uint8_t),16);
+    unsigned char* I_half=(uint8_t*)_mm_malloc(dims_half[2]*dims_half[1]*sizeof(unsigned char),16);
 
     for (v=0;v<dims_half[1];v++)
         for (u=0;u<dims_half[0];u++)
-            I_half[v*dims_half[2]+u]=(uint8_t)(((int32_t)I[(v*2+0)*dims[2]+u*2+0]+
-                                                (int32_t)I[(v*2+0)*dims[2]+u*2+1]+
-                                                (int32_t)I[(v*2+1)*dims[2]+u*2+0]+
-                                                (int32_t)I[(v*2+1)*dims[2]+u*2+1])/4);
+            I_half[v*dims_half[2]+u]=(unsigned char)(((int32_t)I[(v*2+0)*dims[2]+u*2+0]+
+                                                      (int32_t)I[(v*2+0)*dims[2]+u*2+1]+
+                                                      (int32_t)I[(v*2+1)*dims[2]+u*2+0]+
+                                                      (int32_t)I[(v*2+1)*dims[2]+u*2+1])/4);
     return I_half;
 }
 /* in area?-------------------------------------------------------------------*/
@@ -391,141 +393,40 @@ static int inarea(const area_t *area,int u,int v)
     return u<area->rect[3][0]&&u>area->rect[0][0]&&
            v>area->rect[0][1]&&v<area->rect[3][1];
 }
-/* Alexander Neubeck and Luc Van Gool: Efficient Non-Maximum Suppression,-----
- * ICPR'06, algorithm 4
- * ---------------------------------------------------------------------------*/
-static void nonMaximumSuppression(int16_t* I_f1,int16_t* I_f2,const int32_t* dims,
-                                  maximum_set *maxima,int nms_n,
-                                  const matchopt_t *opt,const area_t *area)
+/* free maximum set-----------------------------------------------------------*/
+static void free_maximun_set(maximum_set_t *maxset)
 {
-    /* extract parameters */
-    register int32_t width =dims[0];
-    register int32_t height=dims[1];
-    register int32_t bpl   =dims[2];
-    register int32_t n     =nms_n;
-    register int32_t tau   =opt->nms_tau;
-
-    maximum_t max;
-
-    /* loop variables */
-    register int32_t f1mini,f1minj,f1maxi,f1maxj,f2mini,f2minj,f2maxi,f2maxj;
-    register int32_t f1minval,f1maxval,f2minval,f2maxval,currval;
-    register int32_t addr;
-
-    for (int32_t i=n+margin;i<width-n-margin;i+=n+1) {
-        for (int32_t j=n+margin;j<height-n-margin;j+=n+1) {
-
-            if (area&&!inarea(area,i,j)) continue;
-
-            f1mini=i; f1minj=j; f1maxi=i; f1maxj=j;
-            f2mini=i; f2minj=j; f2maxi=i; f2maxj=j;
-
-            addr    =get_address_offset_image(i,j,bpl);
-            f1minval=*(I_f1+addr);
-            f1maxval=f1minval;
-            f2minval=*(I_f2+addr);
-            f2maxval=f2minval;
-
-            for (int32_t i2=i; i2<=i+n; i2++) {
-                for (int32_t j2=j; j2<=j+n; j2++) {
-                    addr   =get_address_offset_image(i2,j2,bpl);
-                    currval=*(I_f1+addr);
-                    if (currval<f1minval) {
-                        f1mini  =i2;
-                        f1minj  =j2;
-                        f1minval=currval;
-                    }
-                    else if (currval>f1maxval) {
-                        f1maxi  =i2;
-                        f1maxj  =j2;
-                        f1maxval=currval;
-                    }
-                    currval=*(I_f2+addr);
-                    if (currval<f2minval) {
-                        f2mini  =i2;
-                        f2minj  =j2;
-                        f2minval=currval;
-                    }
-                    else if (currval>f2maxval) {
-                        f2maxi  =i2;
-                        f2maxj  =j2;
-                        f2maxval=currval;
-                    }
-                }
-            }
-            /* f1 minimum */
-            for (int32_t i2=f1mini-n;i2<=MIN(f1mini+n,width-1-margin);i2++) {
-                for (int32_t j2=f1minj-n;j2<=MIN(f1minj+n,height-1-margin);j2++) {
-
-                    currval=*(I_f1+get_address_offset_image(i2,j2,bpl));
-                    if (currval<f1minval&&(i2<i||i2>i+n||j2<j||j2>j+n)) {
-                        goto failed_f1min;
-                    }
-                }
-            }
-            if (f1minval<=-tau) {
-                max.u=f1mini;
-                max.v=f1minj;
-                max.val=f1minval;
-                max.c=0;
-                add_maximum_set_maximum(maxima,&max);
-            }
-failed_f1min:;
-            /* f1 maximum */
-            for (int32_t i2=f1maxi-n;i2<=MIN(f1maxi+n,width-1-margin);i2++) {
-                for (int32_t j2=f1maxj-n;j2<=MIN(f1maxj+n,height-1-margin);j2++) {
-
-                    currval=*(I_f1+get_address_offset_image(i2,j2,bpl));
-                    if (currval>f1maxval&&(i2<i||i2>i+n||j2<j||j2>j+n)) {
-                        goto failed_f1max;
-                    }
-                }
-            }
-            if (f1maxval>=tau) {
-                max.u=f1maxi;
-                max.v=f1maxj;
-                max.val=f1maxval;
-                max.c=1;
-                add_maximum_set_maximum(maxima,&max);
-            }
-failed_f1max:;
-            /* f2 minimum */
-            for (int32_t i2=f2mini-n;i2<=MIN(f2mini+n,width-1-margin);i2++) {
-                for (int32_t j2=f2minj-n;j2<=MIN(f2minj+n,height-1-margin);j2++) {
-
-                    currval=*(I_f2+get_address_offset_image(i2,j2,bpl));
-                    if (currval<f2minval&&(i2<i||i2>i+n||j2<j||j2>j+n)) {
-                        goto failed_f2min;
-                    }
-                }
-            }
-            if (f2minval<=-tau) {
-                max.u=f2mini;
-                max.v=f2minj;
-                max.val=f2minval;
-                max.c=2;
-                add_maximum_set_maximum(maxima,&max);
-            }
-failed_f2min:;
-            /* f2 maximum */
-            for (int32_t i2=f2maxi-n;i2<=MIN(f2maxi+n,width-1-margin);i2++) {
-                for (int32_t j2=f2maxj-n;j2<=MIN(f2maxj+n,height-1-margin);j2++) {
-
-                    currval=*(I_f2+get_address_offset_image(i2,j2,bpl));
-                    if (currval>f2maxval&&(i2<i||i2>i+n||j2<j||j2>j+n))
-                        goto failed_f2max;
-                }
-            }
-            if (f2maxval>=tau) {
-                max.u=f2maxi;
-                max.v=f2maxj;
-                max.val=f2maxval;
-                max.c=3;
-                add_maximum_set_maximum(maxima,&max);
-            }
-failed_f2max:;
-        }
+    if (maxset->data) {
+        free(maxset->data); maxset->data=NULL;
     }
+    maxset->n=maxset->nmax=0;
+}
+/* using FAST corner detect corners-------------------------------------------*/
+static void fastfeatdetect(const unsigned char *I,const int img_w,const int img_h,
+                           short barrier,const matchopt_t *opt,
+                           maximum_set *maxima)
+{
+    int *uv=imat(img_w*img_h*3,1),num=0,i;
+    maximum_t pt;
+
+    trace(3,"fastfeatdetect:\n");
+
+    /* FAST corners detect */
+    num=fastfeats(I,img_w,img_h,barrier,opt,uv,&num);
+    if (num<=0) {
+        trace(2,"FAST corners detect fail\n");
+        return;
+    }
+    /* convert to maximum-set */
+    free_maximun_set(maxima);
+    for (i=0;i<num;i++) {
+
+        pt.u=uv[3*i+0]; pt.v=uv[3*i+1];
+        pt.val=uv[3*i+2];
+        pt.c=1;
+        add_maximum_set_maximum(maxima,&pt);
+    }
+    free(uv);
 }
 /* compute feature point descriptor-------------------------------------------*/
 static void compute_descriptor(const uint8_t *I_du, const uint8_t *I_dv,
@@ -566,7 +467,7 @@ static void compute_descriptors(uint8_t *I_du, uint8_t *I_dv, const int32_t bpl,
 {
     /* loop variables */
     register int u,v,i;
-    uint8_t *desc_addr;
+    unsigned char *desc_addr;
 
     /* for all maxima do */
     for (i=0;i<maxset->n;i++) {
@@ -576,13 +477,257 @@ static void compute_descriptors(uint8_t *I_du, uint8_t *I_dv, const int32_t bpl,
         compute_descriptor(I_du,I_dv,bpl,u,v,desc_addr);
     }
 }
-/* free maximum set-----------------------------------------------------------*/
-static void free_maximun_set(maximum_set_t *maxset)
+/* compute FAST corners-------------------------------------------------------*/
+static void compute_fastfeats(uint8_t *I,const int32_t* dims,
+                              int32_t* &max, int32_t &num,
+                              uint8_t* &I_du,uint8_t* &I_dv,
+                              uint8_t* &I_du_full,uint8_t* &I_dv_full,
+                              const matchopt_t *opt)
 {
-    if (maxset->data) {
-        free(maxset->data); maxset->data=NULL;
+    register int16_t *I_f1;
+    register int16_t *I_f2;
+    int i,dims_matching[3];
+
+    trace(3,"compute_fastfeats:\n");
+
+    memcpy(dims_matching,dims,3*sizeof(int32_t));
+
+    /* allocate memory for sobel images and filter images */
+    if (!opt->half_res) {
+        I_du=(unsigned char*)_mm_malloc(dims[2]*dims[1]*sizeof(unsigned char*),16);
+        I_dv=(unsigned char*)_mm_malloc(dims[2]*dims[1]*sizeof(unsigned char*),16);
+        I_f1=(int16_t*)_mm_malloc(dims[2]*dims[1]*sizeof(int16_t),16);
+        I_f2=(int16_t*)_mm_malloc(dims[2]*dims[1]*sizeof(int16_t),16);
+
+        sobel5x5(I,I_du,I_dv,dims[2],dims[1]);
+        blob5x5(I,I_f1,dims[2],dims[1]);
+        checkerboard5x5(I,I_f2,dims[2],dims[1]);
     }
-    maxset->n=maxset->nmax=0;
+    else {
+        unsigned char* I_matching=create_halt_resimg(I,dims);
+        get_half_resolution_dims(dims,dims_matching);
+        I_du=(unsigned char*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(unsigned char*),16);
+        I_dv=(unsigned char*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(unsigned char*),16);
+
+        I_f1=(int16_t*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(int16_t),16);
+        I_f2=(int16_t*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(int16_t),16);
+
+        I_du_full=(unsigned char*)_mm_malloc(dims[2]*dims[1]*sizeof(unsigned char*),16);
+        I_dv_full=(unsigned char*)_mm_malloc(dims[2]*dims[1]*sizeof(unsigned char*),16);
+
+        sobel5x5(I_matching,I_du,I_dv,dims_matching[2],dims_matching[1]);
+        sobel5x5(I,I_du_full,I_dv_full,dims[2],dims[1]);
+        blob5x5(I_matching,I_f1,dims_matching[2],dims_matching[1]);
+        checkerboard5x5(I_matching,I_f2,dims_matching[2],dims_matching[1]);
+        free(I_matching);
+    }
+    /* extract dense maxima via non-maximum suppression */
+    maximum_set mset={0};
+    fastfeatdetect(I,dims[0],dims[1],dims[0],opt,&mset);
+    compute_descriptors(I_du,I_dv,dims[2],&mset);
+
+    /* release filter images */
+    free(I_f1);
+    free(I_f2);
+
+    /* get number of interest points and init maxima pointer to NULL */
+    num=mset.n;
+    max=NULL;
+
+    /* return sparse maxima as 16-bytes aligned memory */
+    if (num!=0) {
+        max=(int32_t*)_mm_malloc(sizeof(maximum)*num,16);
+        int32_t k=0;
+        for (i=0;i<mset.n;i++) {
+            *(max+k++)=mset.data[i].u; *(max+k++)=mset.data[i].v; *(max+k++)=mset.data[i].val;
+            *(max+k++)=mset.data[i].c;
+            *(max+k++)=mset.data[i].d1;
+            *(max+k++)=mset.data[i].d2;
+            *(max+k++)=mset.data[i].d3;
+            *(max+k++)=mset.data[i].d4;
+            *(max+k++)=mset.data[i].d5;
+            *(max+k++)=mset.data[i].d6;
+            *(max+k++)=mset.data[i].d7;
+            *(max+k++)=mset.data[i].d8;
+        }
+    }
+    free_maximun_set(&mset);
+}
+/* Alexander Neubeck and Luc Van Gool: Efficient Non-Maximum Suppression,-----
+ * ICPR'06, algorithm 4
+ * ---------------------------------------------------------------------------*/
+static void nonMaximumSuppression(int16_t* I_f1,int16_t* I_f2,const int32_t* dims,
+                                  maximum_set *maxima,int nms_n,
+                                  const matchopt_t *opt,const area_t *area)
+{
+    /* extract parameters */
+    register int width =dims[0];
+    register int height=dims[1];
+    register int bpl   =dims[2];
+    register int n     =nms_n;
+    register int tau   =opt->nms_tau;
+
+    maximum_t max;
+
+    /* loop variables */
+    register int32_t f1mini,f1minj,f1maxi,f1maxj,f2mini,f2minj,f2maxi,f2maxj;
+    register int32_t f1minval,f1maxval,f2minval,f2maxval,currval;
+    register int32_t addr;
+
+    for (int i=n+margin;i<width-n-margin;i+=n+1) {
+        for (int j=n+margin;j<height-n-margin;j+=n+1) {
+
+            if (area&&!inarea(area,i,j)) continue;
+
+            f1mini=i; f1minj=j; f1maxi=i; f1maxj=j;
+            f2mini=i; f2minj=j; f2maxi=i; f2maxj=j;
+
+            addr    =get_address_offset_image(i,j,bpl);
+            f1minval=*(I_f1+addr);
+            f1maxval=f1minval;
+            f2minval=*(I_f2+addr);
+            f2maxval=f2minval;
+
+            for (int i2=i; i2<=i+n; i2++) {
+                for (int j2=j; j2<=j+n; j2++) {
+                    addr   =get_address_offset_image(i2,j2,bpl);
+                    currval=*(I_f1+addr);
+                    if (currval<f1minval) {
+                        f1mini  =i2;
+                        f1minj  =j2;
+                        f1minval=currval;
+                    }
+                    else if (currval>f1maxval) {
+                        f1maxi  =i2;
+                        f1maxj  =j2;
+                        f1maxval=currval;
+                    }
+                    currval=*(I_f2+addr);
+                    if (currval<f2minval) {
+                        f2mini  =i2;
+                        f2minj  =j2;
+                        f2minval=currval;
+                    }
+                    else if (currval>f2maxval) {
+                        f2maxi  =i2;
+                        f2maxj  =j2;
+                        f2maxval=currval;
+                    }
+                }
+            }
+            /* f1 minimum */
+            for (int i2=f1mini-n;i2<=MIN(f1mini+n,width-1-margin);i2++) {
+                for (int j2=f1minj-n;j2<=MIN(f1minj+n,height-1-margin);j2++) {
+
+                    currval=*(I_f1+get_address_offset_image(i2,j2,bpl));
+                    if (currval<f1minval&&(i2<i||i2>i+n||j2<j||j2>j+n)) {
+                        goto failed_f1min;
+                    }
+                }
+            }
+            if (f1minval<=-tau) {
+                max.u=f1mini;
+                max.v=f1minj;
+                max.val=f1minval;
+                max.c=0;
+                add_maximum_set_maximum(maxima,&max);
+            }
+failed_f1min:;
+            /* f1 maximum */
+            for (int i2=f1maxi-n;i2<=MIN(f1maxi+n,width-1-margin);i2++) {
+                for (int j2=f1maxj-n;j2<=MIN(f1maxj+n,height-1-margin);j2++) {
+
+                    currval=*(I_f1+get_address_offset_image(i2,j2,bpl));
+                    if (currval>f1maxval&&(i2<i||i2>i+n||j2<j||j2>j+n)) {
+                        goto failed_f1max;
+                    }
+                }
+            }
+            if (f1maxval>=tau) {
+                max.u=f1maxi;
+                max.v=f1maxj;
+                max.val=f1maxval;
+                max.c=1;
+                add_maximum_set_maximum(maxima,&max);
+            }
+failed_f1max:;
+            /* f2 minimum */
+            for (int i2=f2mini-n;i2<=MIN(f2mini+n,width-1-margin);i2++) {
+                for (int j2=f2minj-n;j2<=MIN(f2minj+n,height-1-margin);j2++) {
+
+                    currval=*(I_f2+get_address_offset_image(i2,j2,bpl));
+                    if (currval<f2minval&&(i2<i||i2>i+n||j2<j||j2>j+n)) {
+                        goto failed_f2min;
+                    }
+                }
+            }
+            if (f2minval<=-tau) {
+                max.u=f2mini;
+                max.v=f2minj;
+                max.val=f2minval;
+                max.c=2;
+                add_maximum_set_maximum(maxima,&max);
+            }
+failed_f2min:;
+            /* f2 maximum */
+            for (int i2=f2maxi-n;i2<=MIN(f2maxi+n,width-1-margin);i2++) {
+                for (int j2=f2maxj-n;j2<=MIN(f2maxj+n,height-1-margin);j2++) {
+
+                    currval=*(I_f2+get_address_offset_image(i2,j2,bpl));
+                    if (currval>f2maxval&&(i2<i||i2>i+n||j2<j||j2>j+n))
+                        goto failed_f2max;
+                }
+            }
+            if (f2maxval>=tau) {
+                max.u=f2maxi;
+                max.v=f2maxj;
+                max.val=f2maxval;
+                max.c=3;
+                add_maximum_set_maximum(maxima,&max);
+            }
+failed_f2max:;
+        }
+    }
+}
+/* compute shi-tomasi score---------------------------------------------------*/
+static float shitomasiscore(const unsigned char *img, const int img_w,
+                            const int img_h,
+                            int u, int v)
+{
+    register float dXX=0.0;
+    register float dYY=0.0;
+    register float dXY=0.0;
+    int halfbox_size=4;
+    int box_size=2*halfbox_size;
+    int box_area=box_size*box_size;
+    int x_min=u-halfbox_size;
+    int x_max=u+halfbox_size;
+    int y_min=v-halfbox_size;
+    int y_max=v+halfbox_size;
+
+    if (x_min<1||x_max>=img_w-1||y_min<1||y_max>=img_h-1) {
+        return 0.0;  /* patch is too close to the boundary */
+    }
+    int stride=img_w;
+    for (int y=y_min;y<y_max;++y) {
+
+        const uint8_t* ptr_left  =img+stride*y+x_min-1;
+        const uint8_t* ptr_right =img+stride*y+x_min+1;
+        const uint8_t* ptr_top   =img+stride*(y-1)+x_min;
+        const uint8_t* ptr_bottom=img+stride*(y+1)+x_min;
+        for (int x=0;x<box_size;++x,++ptr_left,++ptr_right,++ptr_top,++ptr_bottom) {
+            float dx=*ptr_right -*ptr_left;
+            float dy=*ptr_bottom-*ptr_top;
+            dXX+=dx*dx;
+            dYY+=dy*dy;
+            dXY+=dx*dy;
+        }
+    }
+    /* find and return smaller eigenvalue: */
+    dXX=dXX/(2.0f*box_area);
+    dYY=dYY/(2.0f*box_area);
+    dXY=dXY/(2.0f*box_area);
+    return 0.5f*(dXX+dYY-sqrtf((dXX+dYY)*(dXX+dYY)-4.0f*(dXX*dYY-dXY*dXY)));
 }
 /* compute new features for current frame-------------------------------------*/
 static int compute_features(uint8_t *I,const int32_t* dims,
@@ -597,15 +742,16 @@ static int compute_features(uint8_t *I,const int32_t* dims,
     register int16_t *I_f1;
     register int16_t *I_f2;
 
-    register int32_t dims_matching[3],i;
+    register int32_t dims_matching[3],i,k;
     register int32_t s=1;
+    float score;
     
     memcpy(dims_matching,dims,3*sizeof(int32_t));
 
     /* allocate memory for sobel images and filter images */
     if (!opt->half_res) {
-        I_du=(uint8_t*)_mm_malloc(dims[2]*dims[1]*sizeof(uint8_t*),16);
-        I_dv=(uint8_t*)_mm_malloc(dims[2]*dims[1]*sizeof(uint8_t*),16);
+        I_du=(unsigned char*)_mm_malloc(dims[2]*dims[1]*sizeof(unsigned char*),16);
+        I_dv=(unsigned char*)_mm_malloc(dims[2]*dims[1]*sizeof(unsigned char*),16);
         I_f1=(int16_t*)_mm_malloc(dims[2]*dims[1]*sizeof(int16_t),16);
         I_f2=(int16_t*)_mm_malloc(dims[2]*dims[1]*sizeof(int16_t),16);
 
@@ -614,16 +760,16 @@ static int compute_features(uint8_t *I,const int32_t* dims,
         checkerboard5x5(I,I_f2,dims[2],dims[1]);
     }
     else {
-        uint8_t* I_matching=create_halt_resimg(I,dims);
+        unsigned char* I_matching=create_halt_resimg(I,dims);
         get_half_resolution_dims(dims,dims_matching);
-        I_du=(uint8_t*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(uint8_t*),16);
-        I_dv=(uint8_t*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(uint8_t*),16);
+        I_du=(unsigned char*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(unsigned char*),16);
+        I_dv=(unsigned char*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(unsigned char*),16);
 
         I_f1=(int16_t*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(int16_t),16);
         I_f2=(int16_t*)_mm_malloc(dims_matching[2]*dims_matching[1]*sizeof(int16_t),16);
 
-        I_du_full=(uint8_t*)_mm_malloc(dims[2]*dims[1]*sizeof(uint8_t*),16);
-        I_dv_full=(uint8_t*)_mm_malloc(dims[2]*dims[1]*sizeof(uint8_t*),16);
+        I_du_full=(unsigned char*)_mm_malloc(dims[2]*dims[1]*sizeof(unsigned char*),16);
+        I_dv_full=(unsigned char*)_mm_malloc(dims[2]*dims[1]*sizeof(unsigned char*),16);
 
         sobel5x5(I_matching,I_du,I_dv,dims_matching[2],dims_matching[1]);
         sobel5x5(I,I_du_full,I_dv_full,dims[2],dims[1]);
@@ -639,11 +785,31 @@ static int compute_features(uint8_t *I,const int32_t* dims,
 
         nonMaximumSuppression(I_f1,I_f2,dims_matching,&mset1,nms_n_sparse,opt,NULL);
         compute_descriptors(I_du,I_dv,dims_matching[2],&mset1);
+
+        /* shi-tomasi score check */
+        for (k=0,i=0;i<mset1.n;i++) {
+            score=shitomasiscore(I,dims[0],dims[1],mset1.data[i].u,mset1.data[i].v);
+            if (score<SCORE_THRESHOLD) {
+                continue;
+            }
+            memcpy(&mset1.data[k++],&mset1.data[i],sizeof(maximum_t));
+        }
+        mset1.n=k;
     }
     /* extract dense maxima (2nd pass) via non-maximum suppression */
     maximum_set mset2={0};
     nonMaximumSuppression(I_f1,I_f2,dims_matching,&mset2,opt->nms_n,opt,NULL);
     compute_descriptors(I_du,I_dv,dims_matching[2],&mset2);
+
+    /* shi-tomasi score check */
+    for (k=0,i=0;i<mset2.n;i++) {
+        score=shitomasiscore(I,dims[0],dims[1],mset2.data[i].u,mset2.data[i].v);
+        if (score<SCORE_THRESHOLD) {
+            continue;
+        }
+        memcpy(&mset2.data[k++],&mset2.data[i],sizeof(maximum_t));
+    }
+    mset2.n=k;
 
     /* release filter images */
     free(I_f1);
@@ -767,11 +933,19 @@ static int puchbackimg(uint8_t *I1,int32_t* dims,const int replace,
             memcpy(I1c+v*dims_c[2],I1+v*bpl,dims_c[0]*sizeof(uint8_t));
         }
     }
+#if FAST_CORNERS
+    /* FAST corner detect */
+    compute_fastfeats(I1c,dims_c,m1c2,n1c2, /* dense corners */
+                      I1c_du,I1c_dv,
+                      I1c_du_full,
+                      I1c_dv_full,opt);
+#else
     /* compute new features for current frame */
     compute_features(I1c,dims_c,m1c1,n1c1,m1c2,n1c2,
                      I1c_du,I1c_dv,
                      I1c_du_full,
                      I1c_dv_full,opt);
+#endif
     return 1;
 }
 /* clear match set data-------------------------------------------------------*/
@@ -1183,7 +1357,7 @@ static void refinement(match_set_t *mset,const matchopt_t *opt)
                            1, 1, 1, 1, 1, 1, 1, 1, 1};
     double *At,*AtA;
     int i;
-    uint8_t* desc_buffer=(uint8_t*)_mm_malloc(32*sizeof(uint8_t),16);
+    unsigned char* desc_buffer=(uint8_t*)_mm_malloc(32*sizeof(unsigned char),16);
 
     trace(3,"refinement:\n");
 
@@ -1196,10 +1370,10 @@ static void refinement(match_set_t *mset,const matchopt_t *opt)
     matt(A,6,9,At);
     matmul("NN",6,6,9,1.0,At,A,0.0,AtA);
 
-    uint8_t* I1p_du_fit=I1p_du;
-    uint8_t* I1p_dv_fit=I1p_dv;
-    uint8_t* I1c_du_fit=I1c_du;
-    uint8_t* I1c_dv_fit=I1c_dv;
+    unsigned char* I1p_du_fit=I1p_du;
+    unsigned char* I1p_dv_fit=I1p_dv;
+    unsigned char* I1c_du_fit=I1c_du;
+    unsigned char* I1c_dv_fit=I1c_dv;
 
     if (opt->half_res) {
         I1p_du_fit=I1p_du_full;
@@ -1240,11 +1414,15 @@ static int matchfeatures(const matchopt_t *opt,match_set_t *mset_sparse,
 {
     trace(3,"match_features:\n");
 
+#if FAST_CORNERS
+    if (m1p2==NULL||n1p2==0||m1c2==NULL||n1c2==0) return 0;
+#else
     /* flow match feature points */
     if (m1p2==NULL||n1p2==0||m1c2==NULL||n1c2==0) return 0;
     if (opt->multi_stage) {
         if (m1p1==NULL||n1p1==0||m1c1==NULL||n1c1==0) return 0;
     }
+#endif
     /* clear old matches */
     free_match_set(mset_sparse);
     free_match_set(mset_dense);
@@ -1252,6 +1430,16 @@ static int matchfeatures(const matchopt_t *opt,match_set_t *mset_sparse,
     /* double pass matching */
     if (opt->multi_stage) {
 
+#if FAST_CORNERS
+        /* FAST corners match for dense features */
+        match_internal(opt,mset_dense,m1p2,m1c2,n1p2,n1c2,false,1);
+
+        if (opt->refine>0) {
+            refinement(mset_dense,opt);
+        }
+        remove_outliers(mset_dense,opt,index,num,
+                        nindex,nnum);
+#else
         /* 1st pass (sparse matches) */
         match_internal(opt,mset_sparse,m1p1,m1c1,n1p1,n1c1,false,0);
         remove_outliers(mset_sparse,opt,NULL,NULL,
@@ -1268,8 +1456,20 @@ static int matchfeatures(const matchopt_t *opt,match_set_t *mset_sparse,
         }
         remove_outliers(mset_dense,opt,index,num,
                         nindex,nnum);
+#endif
     }
     else {
+        
+#if FAST_CORNERS
+        /* FAST corners match for dense features */
+        match_internal(opt,mset_dense,m1p2,m1c2,n1p2,n1c2,false,1);
+
+        if (opt->refine>0) {
+            refinement(mset_dense,opt);
+        }
+        remove_outliers(mset_dense,opt,index,num,
+                        nindex,nnum);
+#else
         /* single pass matching */
         match_internal(opt,mset_dense,m1p2,m1c2,n1p2,n1c2,false,1);
         if (opt->refine>0) {
@@ -1277,6 +1477,7 @@ static int matchfeatures(const matchopt_t *opt,match_set_t *mset_sparse,
         }
         remove_outliers(mset_dense,opt,index,num,
                         nindex,nnum);
+#endif
     }
     return mset_sparse->n;
 }
@@ -1354,7 +1555,7 @@ static void bucketfeat(const matchopt_t *opt,const match_set_t *mp_dense,
 {
     register float u_max=0,bucket_w=(float)opt->bucket.w;
     register float v_max=0,bucket_h=(float)opt->bucket.h;
-    register int i,u,v,*rlist,j,n;
+    register int i,u,v,*rlist,j,n,k;
 
     trace(3,"bucketfeat:\n");
 
@@ -1459,7 +1660,7 @@ static void buketfeatnew(const matchopt_t *opt,const match_set_t *mp_dense,
     /* assign matches to their buckets */
     match_set *buckets=(match_set*)calloc(sizeof(match_set),bc*br);
     for (i=0;i<nnum;i++) {
-        u=(int)floor(mp_dense->data[nindex[i]].uc/bw );
+        u=(int)floor(mp_dense->data[nindex[i]].uc/bw);
         v=(int)floor(mp_dense->data[nindex[i]].vc/bh);
 
         add_match_set_match_point(&buckets[v*bc+u],&(mp_dense->data[nindex[i]]));
@@ -1597,8 +1798,7 @@ extern int matchfeats(match_t *pmatch,const img_t *img)
     trace_match_points(&pmatch->mp_bucket);
 #endif
     /* check match ok? */
-    if (pmatch->mp_dense .n<=0||pmatch->mp_sparse.n<=0||
-        pmatch->mp_bucket.n<=0) {
+    if (pmatch->mp_dense .n<=0||pmatch->mp_bucket.n<=0) {
 
         free(index); free(nindex);
         trace(2,"match feature fail\n");

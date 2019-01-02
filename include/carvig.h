@@ -315,12 +315,16 @@ extern "C"{
 #define FREQTYPE_ALL 0xFF               /* frequency type: all */
 
 #define FEAT_CREATE           0         /* feature point status: created */
+#define FEAT_INIT_FAIL        1         /* feature point status: feature point position initial fail */
 
 #define TRACK_UPDATED         0         /* feature point track flag: updated */
 #define TRACK_NEW             1         /* feature point track flag: new track */
 #define TRACK_LOST            2         /* feature point track flag: track lost */
-#define TRACK_FILTER          3         /* feature point track flag: have used to filter */
-#define TRACK_INIT            4         /* feature point track flag: initial feture point position */
+#define TRACK_BAD             3         /* feature point track flag: bad track */
+#define TRACK_FILTER          4         /* feature point track flag: have used to filter */
+#define TRACK_INIT_POS_OK     5         /* feature point track flag: initial feature point position ok */
+#define TRACK_INIT_POS_FAIL   6         /* feature point track flag: initial feature point position fail */
+#define TRACK_BUCKET          7         /* feature point track flag: track have used to bucket robust estimate */
 
 #define KLT_INIT              1         /* KLT track status: initial */
 #define KLT_TRACKED           0         /* KLT track status: tracked */
@@ -768,7 +772,8 @@ typedef struct trackd {         /* feature points track record */
                                  * 2: track lost,                    --TRACK_LOST
                                  * 3: bad track,                     --TRACK_BAD
                                  * 4: have used to filter            --TRACK_FILTER
-                                 * 5: initial feature point position --TRACK_INIT
+                                 * 5: initial feature position ok    --TRACK_INIT_POS_OK
+                                 * 6: initial feature position fail  --TRACK_INIT_POS_FAIL
                                  * */
     int uid;                    /* a unique identifier of this track */
     struct feature *data;       /* track feature data */
@@ -777,8 +782,8 @@ typedef struct trackd {         /* feature points track record */
 
 typedef struct track {          /* store all feature track data type */
     int n,nmax;                 /* number and max number of track data */
-    int newtrack[MAXBUFF],updtrack[MAXBUFF],nnew,nupd;
-                                /* new/updated feature track index in `.data' */
+    int newtrack[MAXBUFF],updtrack[MAXBUFF],losttrack[MAXBUFF],exceedtrack[MAXBUFF],nnew,nupd,nlost,nexceed;
+                                /* new/updated/lost/exceed-max-track-length feature track index in `.data' */
     trackd_t *data;             /* track data */
 } track_t;
 
@@ -3282,6 +3287,8 @@ EXPORT int predictfeat(const double *R,const double *t,const double *K,
 EXPORT int getcamerapose(gtime_t time,double *R,double *t);
 EXPORT int getfeaturepos(trackd_t *feat,gtime_t time,double *pf);
 EXPORT int inroi(const float u,const float v,const matchopt_t *opt);
+EXPORT int fastfeats(const unsigned char *img,int img_w,int img_h,short barrier,
+                     const matchopt_t *opt,int *uv,int *num);
 
 /* ins-gnss-vo coupled post-processing----------------------------------------*/
 EXPORT int igvopostpos(const gtime_t ts, gtime_t te, double ti, double tu,
