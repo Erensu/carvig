@@ -24,6 +24,7 @@
 #define REBOOT       1            /* ins tightly coupled reboot if always update fail */
 #define CHKNUMERIC   1            /* check numeric for given value */
 #define RECHK_ATT    1            /* recheck attitude of imu body */
+#define UPD_INS_N    0            /* updates ins states in e-frame */
 
 /* solution convert to velocity----------------------------------------------*/
 static void sol2vel(const sol_t *sol1,const sol_t *sol2,double *v)
@@ -80,7 +81,6 @@ static int rebootc(insstate_t *ins,const prcopt_t *opt,const obsd_t *obs,int n,
                    const imud_t *imu,const nav_t *nav)
 {
     int i; double vr[3]={0};
-
     static prcopt_t prcopt=*opt;
     static sol_t sols[MAXSOLR]={0},sol0={0};
     static int first=1;
@@ -127,8 +127,8 @@ static int rebootc(insstate_t *ins,const prcopt_t *opt,const obsd_t *obs,int n,
     }
     /* reboot ins states */
     rebootsta(&prcopt,ins);
-    if (!ant2inins(sols[MAXSOLR-1].time,sols[MAXSOLR-1].rr,
-                   vr,&opt->insopt,NULL,ins,NULL)) {
+    if (!ant2inins(sols[MAXSOLR-1].time,sols[MAXSOLR-1].rr,vr,&opt->insopt,
+                   NULL,ins,NULL)) {
         trace(2,"reboot ins state fail\n");
         return 1;
     }
@@ -158,8 +158,8 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
     double *P,dt;
     const insopt_t* insopt=&opt->insopt;
 
+    if (imu==NULL) return 0;
     trace(3,"tcigpos: update=%d,time=%s\n",upd,time_str(imu->time,4));
-
 #if CHKNUMERIC
     /* check numeric of estimate state */
     for (i=0;i<3;i++) {
@@ -170,9 +170,10 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
         }
     }
 #endif
-    ins->stat=INSS_NONE; /* start ins mechanization */
+    /* start ins mechanization */
+    ins->stat=INSS_NONE;
     if (
-#if 0
+#if UPD_INS_N
         /* update ins states based on llh position mechanization */
         !updateinsn(insopt,ins,imu);
 #else
@@ -184,8 +185,6 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
         return 0;
     }
     P=zeros(nx,nx);
-
-    /* propagate ins states */
     propinss(ins,insopt,ins->dt,ins->x,ins->P);
 
     /* check variance of estimated position */

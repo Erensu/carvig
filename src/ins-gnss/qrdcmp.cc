@@ -99,7 +99,7 @@ extern int qr(const double *A,int m,int n,double *Q,double *R,int flag)
     Ro=dmat(m,n);
 
     for (i=0;i<m;i++) {
-        for (j=0;j<n;j++) Ao[i][j]=(flag==0?A[i+j*m]:A[j+i*m]);
+        for (j=0;j<n;j++) Ao[i][j]=(flag==0?A[i+j*m]:A[j+i*n]);
     }
     if (!qrdcmp(Ao,m,n,Qo,Ro)) {
         free(Qo[0]); free(Ro[0]);
@@ -109,8 +109,8 @@ extern int qr(const double *A,int m,int n,double *Q,double *R,int flag)
         free(Ro); return 0;
     }
     for (i=0;i<m;i++) {
-        for (j=0;j<m&&Q;j++) Q[i+j*m]=(flag==0?Qo[i][j]:Qo[j][i]);
-        for (j=0;j<n&&R;j++) R[i+j*m]=(flag==0?Ro[i][j]:Ro[j][i]);
+        for (j=0;j<m&&Q;j++) Q[i+j*m]=Qo[i][j];
+        for (j=0;j<n&&R;j++) R[i+j*m]=Ro[i][j];
     }
     free(Qo[0]); free(Ro[0]);
     free(Ao[0]);

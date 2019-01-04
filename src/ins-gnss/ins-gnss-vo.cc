@@ -57,6 +57,7 @@
 #define MAXGDOP                     30.0      /* reject threshold of gdop */
 #define MAX_RANSAC_ITER             100       /* max number of RANSAC for features measurement updates */
 #define RATIO_THRESHOLD             0.8       /* ratio threshold for epipolar constraint check */
+#define DO_QR_DCMP                  1         /* do QR decomposition */
 
 /* type definitions ----------------------------------------------------------*/
 typedef struct hashtable {                    /* hash table type */
@@ -1639,6 +1640,68 @@ exit:
     hash_destroy(&otrk.trackfeat);
     return n;
 }
+/* QR decomposition-----------------------------------------------------------*/
+static int doqrdcmp(const double *H,const double *v,const double *R,int nv,int nx,
+                    double *Hq,double *vq,double *Rq,int *nq)
+{
+    double *Qo,*Ro,*Th,*Q1;
+    int i,j;
+
+    Qo=mat(nv,nv);
+    Ro=mat(nv,nx);
+
+    if (qr(H,nv,nx,Qo,Ro,1)) {
+        trace(2,"QR decomposition fail\n");
+
+        free(Qo);
+        free(Ro);
+        return 0;
+    }
+    trace(3,"Q=\n"); tracemat(3,Qo,nv,nv,12,6);
+    trace(3,"R=\n"); tracemat(3,Ro,nv,nx,12,6);
+
+    for (i=nv-1;i>=0;i--) {
+        if (fabs(Ro[i+nv*(nx-1)])>1E-6) break;
+    }
+    *nq=i+1;
+    Th=mat(*nq,nx);
+    Q1=mat(nv,*nq);
+
+    for (i=0;i<nv;i++) {
+        for (j=0;j<*nq;j++) Q1[i+j*nv]=Qo[i+j*nv];
+    }
+    for (i=0;i<*nq;i++) {
+        for (j=0;j<nx;j++) {
+            Th[i+j**nq]=Ro[i+j*nv];
+        }
+    }
+    trace(3,"Q1=\n");
+    tracemat(3,Q1,nv,*nq,12,6);
+
+    trace(3,"Th=\n");
+    tracemat(3,Th,*nq,nx,12,6);
+
+    if (Hq) {
+        for (i=0;i<*nq;i++) {
+            for (j=0;j<nx;j++) Hq[i*nx+j]=Th[i+j**nq];
+        }
+        trace(3,"Hq=\n");
+        tracemat(3,Hq,nx,*nq,12,6);
+    }
+    if (Rq) {
+        matmul33("TNN",Q1,R,Q1,*nq,nv,nv,*nq,Rq);
+        trace(3,"Rq=\n");
+        tracemat(3,Rq,*nq,*nq,12,6);
+    }
+    if (vq) {
+        matmul("TN",*nq,1,nx,1.0,Q1,v,0.0,vq);
+        trace(3,"vq=\n");
+        tracemat(3,vq,*nq,1,12,6);
+    }
+    free(Qo);
+    free(Ro); free(Th); free(Q1);
+    return 1;
+}
 /* iteration for feature point measurement update-----------------------------*/
 static int iterfeatupd(const insopt_t *opt,insstate_t *ins,cams_t *cams,int ncam,
                        double *Pc,gtime_t time,
@@ -1647,8 +1710,10 @@ static int iterfeatupd(const insopt_t *opt,insstate_t *ins,cams_t *cams,int ncam
 {
     double *H,*R,*v,*Ho,*Ro,*vo,*Hf,*x;
     double *Hk,*Rk,*vk,*rk;
+    double *Hq,*Rq,*vq;
+    double *Hp,*Rp,*vp;
     int i,j,nv,nx=vofilt.nx,n=vofilt.n,index[MAX_TRACK_LEN],ki=0,k,nvp,*idnx;
-    int p,q,fidxv[MAX_TRACK_LEN],ok=0,nf;
+    int p,q,ok=0,nf,nq;
 
     trace(3,"iterfeatupd:\n");
 
@@ -1721,9 +1786,36 @@ static int iterfeatupd(const insopt_t *opt,insstate_t *ins,cams_t *cams,int ncam
         return 0;
     }
 #endif
+
+#if DO_QR_DCMP
+    Hq=mat(nv,nx); vq=mat(nv,1);
+    Rq=mat(nv,nv);
+
+    /* QR decomposition */
+    if (nv>2*nx&&doqrdcmp(Hk,vk,Rk,nv,nx,Hq,vq,Rq,&nq)) {
+        Hp=Hq; Rp=Rq; vp=vq;
+    }
+    else {
+        Hp=Hk; Rp=Rk;
+        vp=vk; nq=nv;
+    }
+    /* EKF filter */
+    if (filter(x,Pc,Hp,vp,Rp,nx,nq)) {
+        trace(2,"EKF filter fail\n");
+
+        free(H ); free(v ); free(R ); free(x);
+        free(Hf); free(Ho); free(vo);
+        free(Ro); free(Hk); free(Rk);
+        free(vk);
+        free(Hq); free(Rq); free(vq);
+        return 0;
+    }
+    free(Hq);
+    free(Rq); free(vq);
+#else
     /* EKF filter */
     if (filter(x,Pc,Hk,vk,Rk,nx,nv)) {
-        trace(2,"ekf filter fail\n");
+        trace(2,"EKF filter fail\n");
 
         free(H ); free(v ); free(R ); free(x);
         free(Hf); free(Ho); free(vo);
@@ -1731,6 +1823,7 @@ static int iterfeatupd(const insopt_t *opt,insstate_t *ins,cams_t *cams,int ncam
         free(vk); free(idnx);
         return 0;
     }
+#endif
     updatestat(x,ins,cams,ncam,nx,opt); /* update all states */
 #if POST_VALIDATION
     /* post residual validation */

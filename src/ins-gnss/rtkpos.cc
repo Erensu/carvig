@@ -2658,13 +2658,15 @@ extern void rtkfree(rtk_t *rtk)
     if (rtk->ins.xa) free(rtk->ins.xa); rtk->ins.xa=NULL;
 
     if (rtk->ins.gmeas.data) {
-        free(rtk->ins.gmeas.data); rtk->ins.gmeas.data=NULL;
+        free(rtk->ins.gmeas.data);
+        rtk->ins.gmeas.data=NULL;
     }
     rtk->ins.nx=rtk->ins.nb=0;
     rtk->ins.gmeas.n=rtk->ins.gmeas.nmax=0;
 
     if (rtk->bias.amb) {
-        free(rtk->bias.amb); rtk->bias.amb=NULL;
+        free(rtk->bias.amb);
+        rtk->bias.amb=NULL;
     }
 }
 /* precise positioning ---------------------------------------------------------
