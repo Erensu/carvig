@@ -31,8 +31,6 @@ extern void distortradtan(const cam_t *cam,const double *in,double *out,double *
 {
     double mx2,my2,mxy,r2,rad;
 
-    trace(3,"distortradtan:\n");
-
     mx2=in[0]*in[0];
     my2=in[1]*in[1];
     mxy=in[0]*in[1];
@@ -68,8 +66,6 @@ extern int undistortradtan(const cam_t *cam,const double *in,double *out,
     double ybar[2],ytmp[2],F[4],e[2],du[2];
     double T[4],E[2];
     int i,flag=0;
-
-    trace(3,"undistortradtan:\n");
 
     matcpy(ybar,in,1,2);
     for (i=0;i<5;i++) { /* iterations for undistorted */

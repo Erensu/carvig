@@ -1,4 +1,4 @@
-/*------------------------------------------------------------------------------
+/*--------------------------------------------------------------------------------
  * ins-gnss-vo.cc : ins-gnss-vo coupled common functions
  *
  * reference :
@@ -30,6 +30,10 @@
  *    [13] Li M , Kim B H , Mourikis A I . Real-time motion tracking on a cellphone
  *         using inertial sensing and a rolling-shutter camera[C]// IEEE International
  *         Conference on Robotics & Automation. IEEE, 2013.
+ *    [14] Monocular Visual-Inertial SLAM and Self Calibration for Long Term Autonomy
+ *    [15] Lupton T , Sukkarieh S . Visual-Inertial-Aided Navigation for High-Dynamic
+ *         Motion in Built Environments Without Initial Conditions[J]. IEEE Transactions
+ *         on Robotics, 2012, 28(1):61-76.
  *
  * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
  * history : 2018/12/02 1.0 new
@@ -47,11 +51,11 @@
 #define OUT_DETECT                  1         /* Mahalanobis gating test for the residual */
 #define USE_BUCKET_FEATS            1         /* use bucket matched feature points data */
 #define POST_VALIDATION             1         /* post-fit residuals for validation solution */
-#define BUCKET_WIDTH                80        /* width of bucket for bucketing matches in pixel */
-#define BUCKET_HEIGHT               80        /* height of bucket for bucketing matches in pixel */
+#define BUCKET_WIDTH                40        /* width of bucket for bucketing matches in pixel */
+#define BUCKET_HEIGHT               40        /* height of bucket for bucketing matches in pixel */
 #define BUCKET_ROBUST               1         /* bucket matches for robust estimate states */
 #define MAXGDOP                     30.0      /* reject threshold of gdop */
-#define MAX_RANSAC_ITER             20        /* max number of RANSAC for features measurement updates */
+#define MAX_RANSAC_ITER             100       /* max number of RANSAC for features measurement updates */
 #define RATIO_THRESHOLD             0.8       /* ratio threshold for epipolar constraint check */
 
 /* type definitions ----------------------------------------------------------*/
@@ -62,7 +66,7 @@ typedef struct hashtable {                    /* hash table type */
 } hashtable_t;
 
 typedef struct cams {                         /* camera pose states type */
-    gtime_t time;                             /* timestamp of ins states */
+    gtime_t time,imgt;                        /* timestamp of ins states/image data */
     long int find;                            /* frame index corresponding to camera */
     unsigned char flag;                       /* flag of camera pose (0:initial, 1: updated, 2:bad) */
     double re[3],ve[3],Cce[9];                /* camera position/velocity/attitude states in ecef */
@@ -92,7 +96,10 @@ static int (*featpos_funcptr)(const cams_t *cam1,const cams_t *cam2,const inssta
                               const double *uv2,
                               const double *K,
                               double *pf);    /* function pointer of feature position compute function */
-
+static int ttable[MAX_TRACK_LEN][MAXBUFF];
+static int ntt[MAX_TRACK_LEN];                /* track feature table which store number and index of
+                                               * tracking `min-track-len' to `max-track-len'
+                                               * */
 /* add a track feature to hash table------------------------------------------*/
 static void hash_add_feature(struct hashtable **ht,const int id,const trackd_t *ptk)
 {
@@ -223,7 +230,7 @@ extern int resize(double **A,int m,int n,int p,int q)
     return 1;
 }
 /* get camera pose using current ins stats------------------------------------*/
-static void campose(const insstate_t *ins,const insopt_t *opt,cams_t *cams,
+static void campose(const insstate_t *ins,const insopt_t *opt,const img_t *img,cams_t *cams,
                     double *Jp,double *Ja,double *Jv)
 {
     double T[3],we[3]={0,0,-OMGE},web[3];
@@ -254,6 +261,7 @@ static void campose(const insstate_t *ins,const insopt_t *opt,cams_t *cams,
             cams->ve[i]=cams->ve[i]+ins->ve[i];
         }
         cams->time=ins->time;
+        cams->imgt=img->time;
         cams->flag=0; /* initial flag */
     }
     /* jacobian for camera position */
@@ -327,13 +335,13 @@ static void campose(const insstate_t *ins,const insopt_t *opt,cams_t *cams,
 }
 /* add a ins state to filter--------------------------------------------------*/
 static int addinstat(vofilt_t *filt,const insstate_t *in,const insopt_t *opt,
-                     int cur_fid)
+                     const img_t *img,int cur_fid)
 {
     cams_t cams,*p;
     trace(3,"addinstat: time=%s\n",time_str(in->time,4));
 
     /* compute camera pose */
-    campose(in,opt,&cams,NULL,NULL,NULL);
+    campose(in,opt,img,&cams,NULL,NULL,NULL);
 
     /* create hash table */
     cams.trackfeat=hashtable();
@@ -401,7 +409,7 @@ static int propagate(vofilt_t *filt,const insstate_t *ins)
 }
 /* add a ins state to vo-filter workspace-------------------------------------*/
 static void augstates(vofilt_t *filt,const insstate_t *ins,const insopt_t *opt,
-                      int cur_fid)
+                      const img_t *img,int cur_fid)
 {
     double *J,*Jp,*Jv,*Ja,*P,*I;
     int i,j,nx=ins->nx;
@@ -414,7 +422,7 @@ static void augstates(vofilt_t *filt,const insstate_t *ins,const insopt_t *opt,
         for (i=0;i<nx;i++) for (j=0;j<nx;j++) filt->Px[i+j*nx]=ins->P[i+j*nx];
     }
     /* add a camera pose to sliding window */
-    if (addinstat(filt,ins,opt,cur_fid)<0) {
+    if (addinstat(filt,ins,opt,img,cur_fid)<0) {
         trace(2,"add camera pose fail\n");
         return;
     }
@@ -422,7 +430,7 @@ static void augstates(vofilt_t *filt,const insstate_t *ins,const insopt_t *opt,
     J=zeros(nxc,nxp); I=eye(nxp);
 
     /* jacobians */
-    campose(ins,opt,NULL,Jp,Ja,Jv);
+    campose(ins,opt,img,NULL,Jp,Ja,Jv);
 
     asi_blk_mat(J,nxc,nxp,Ja,3,nx,nxp+0,0);
     asi_blk_mat(J,nxc,nxp,Jv,3,nx,nxp+3,0);
@@ -434,11 +442,8 @@ static void augstates(vofilt_t *filt,const insstate_t *ins,const insopt_t *opt,
     trace(3,"J=\n");
     tracemat(3,J,nxc,nxp,12,6);
 
-    trace(3,"P(0)=\n");
-    tracemat(3,filt->Px,nxp,nxp,12,6);
-
-    trace(3,"P(1)=\n");
-    tracemat(3,P,nxc,nxc,12,6);
+    trace(3,"P(0)=\n"); tracemat(3,filt->Px,nxp,nxp,12,6);
+    trace(3,"P(1)=\n"); tracemat(3,P,nxc,nxc,12,6);
     
     /* augment covariance matrix */
     for (i=0;i<nxc;i++) {
@@ -510,12 +515,21 @@ static int addcurrenttrack(cams_t *cam)
     trace(3,"add new tracks: %d\n",tracks.nnew);
     trace(3,"update tracks: %d\n",tracks.nupd);
 
+    for (i=0;i<MAX_TRACK_LEN;i++) ntt[i]=0;
+
     /* get number of tracking lost */
     for (i=0,tracks.nlost=0;i<tracks.n;i++) {
         if (tracks.data[i].flag==TRACK_LOST) tracks.losttrack[tracks.nlost++]=i;
+
+        j=(tracks.data[i].n-2)%MAX_TRACK_LEN;
+        ttable[j][ntt[j]++]=i;
     }
     trace(3,"track lost: %d\n",tracks.nlost);
 
+    trace(3,"track table:\n");
+    for (i=0;i<MAX_TRACK_LEN;i++) {
+        trace(3,"track len=%2d:  %4d\n",i+2,ntt[i]);
+    }
     /* exceed max track length */
     for (i=0,tracks.nexceed=0;i<tracks.n;i++) {
         if (tracks.data[i].n>=MAX_TRACK_LEN) tracks.exceedtrack[tracks.nexceed++]=i;
@@ -696,16 +710,10 @@ static void featureH(const trackd_t *trackf,const cams_t *cam,
 static int findallcamera(const trackd_t *feat,const insopt_t *opt,gtime_t time,
                          int *index)
 {
-    int i,k,j;
+    int i,k;
     for (i=0,k=0;i<vofilt.n;i++) {
         if (!hash_find_feature(vofilt.data[i].trackfeat,feat->uid)) continue;
         index[k++]=i;
-    }
-    for (i=0;i<feat->n;i++) for (j=0;j<k;j++) {
-        if (fabs(timediff(feat->data[i].time,vofilt.data[index[j]].time))<1E-6) {
-            break;
-        }
-        SWAP(int,index[i],index[j]);
     }
     return k;
 }
@@ -968,20 +976,19 @@ static int estfeatpos(trackd_t *feat,const insopt_t *opt,const insstate_t *ins,c
         return 0;
     }
     if (k<MIN_TRACK_LEN) return 0;
+    getK(ins,K);
 
     /* camera pointer */
-    cam1=&cams[index[  0]];
-    cam2=&cams[index[k-1]];
+    cam1=&cams[index[0]]; cam2=&cams[index[k-1]];
     
     /* feature point measurement data */
     uv1[0]=feat->data[        0].u; uv1[1]=feat->data[0].v;
     uv2[0]=feat->data[feat->n-1].u;
     uv2[1]=feat->data[feat->n-1].v;
-    getK(ins,K);
-
+#if 0
     /* draw track feature for debug */
     drawtrackd(feat,&opt->voopt);
-
+#endif
     /* initial feature point position */
     if (!initfeatpos(cam1,cam2,ins,uv1,uv2,K,pf,0)) {
         trace(2,"initial feature position fail\n");
@@ -1152,16 +1159,18 @@ static int calcgnposest(trackd_t *feat,const insopt_t *opt,const insstate_t *ins
     return k;
 }
 /* measurement update for a feature point-------------------------------------*/
-static int featmeas(trackd_t *trk,const insstate_t *ins,const insopt_t *opt,const cams_t *cams,
-                    gtime_t time,double *H,double *v,double *R,double *Hf,int *index,int *ki)
+static int featmeas(trackd_t *trk,const insstate_t *ins,const insopt_t *opt,
+                    const cams_t *cams,
+                    gtime_t time,double *H,double *v,double *R,double *Hf,
+                    int *index,int *ki)
 {
     int i,j,k,nv,nx=vofilt.nx,ixs;
-    double *Hc,*Hkp,*Hfo,vc[2],Rc[4],*r,*Hfb;
-    cams_t *pcam=NULL;
+    double *Hc,*Hkp,*Hfo,vc[2],Rc[4]={0},*r,*Hfb;
+    const cams_t *pcam=NULL;
 
     static int ifo=xiCfo(opt),nfo=xnCfo(opt);
     static int ikp=xiCkp(opt),nkp=xnCkp(opt);
-    
+
     /*  compute feature position*/
     if (!(*ki=k=calcgnposest(trk,opt,ins,cams,time,index))) return 0;
     if (trk->flag==TRACK_INIT_POS_FAIL) return 0;
@@ -1171,7 +1180,7 @@ static int featmeas(trackd_t *trk,const insstate_t *ins,const insopt_t *opt,cons
     r=zeros(2*k,1);
 
     /* for every camera pose */
-    for (i=0,nv=0,*ki=0,pcam=vofilt.data;i<k&&pcam;i++) {
+    for (i=0,nv=0,*ki=0,pcam=cams;i<k&&pcam;i++) {
 
         /* residual vector */
         featurev(trk,&trk->data[i],&pcam[index[i]],ins,vc);
@@ -1206,7 +1215,8 @@ static int featmeas(trackd_t *trk,const insstate_t *ins,const insopt_t *opt,cons
         if (v) {
             v[2*nv+0]=vc[0]; v[2*nv+1]=vc[1];
         }
-        r[2*nv]=Rc[0]; r[2*nv+1]=Rc[3];
+        r[2*nv+0]=Rc[0];
+        r[2*nv+1]=Rc[3];
         if (Hf) {
             for (j=0;j<3;j++) {
                 Hf[(2*nv+0)*3+j]=Hfb[0+j*2]; /* for feature position */
@@ -1223,9 +1233,8 @@ static int featmeas(trackd_t *trk,const insstate_t *ins,const insopt_t *opt,cons
         free(Hkp); free(r);
         return 0;
     }
-    for (i=0;i<nv&&R;i++) {
-        R[2*i+0+(2*i+0)*2*nv]=r[2*i+0];
-        R[2*i+1+(2*i+1)*2*nv]=r[2*i+1];
+    for (i=0;i<2*nv&&R;i++) {
+        for (j=0;j<2*nv;j++) if (i==j) R[i+j*2*nv]=r[i]; else R[i+j*2*nv]=0.0;
     }
     trace(3,"R=\n"); tracemat(3,R,2*nv,2*nv,12,6);
     trace(3,"v=\n"); tracemat(3,v,2*nv,1,12,6);
@@ -1326,20 +1335,20 @@ static int outdetect(const double *P,const double *Ho,const double *Ro,
 static int xFxchk(const cams_t *cam1,const cams_t *cam2,const insopt_t *opt,
                   const feature *f1,const feature *f2,const insstate_t *ins)
 {
+    static double thres=opt->voopt.inlier_thres*1.5;
     double R[9],t[3],T1[16],T2[16],dT[16],x1[3],x2[3];
     double E[9],Fx[3],Ftx[3],x2tFx1;
     double d;
-
+    
     rt2tf(cam1->Cce,cam1->re,T1);
     rt2tf(cam2->Cce,cam2->re,T2);
     if (!matinv(T1,4)) {
         matmul("NN",4,4,4,1.0,T1,T2,0.0,dT);
     }
     else seteye(dT,4);
-    matinv(dT,4);
     tf2rt(dT,R,t);
-    getfeatmeas(f1,ins,x1); /* feature point measurement */
-    getfeatmeas(f2,ins,x2);
+
+    getfeatmeas(f1,ins,x1); getfeatmeas(f2,ins,x2); /* feature point measurement */
 
     skewsym3(t,T1);
     matmul("NN",3,3,3,1.0,T1,R,0.0,E); /* essential matrix */
@@ -1352,11 +1361,7 @@ static int xFxchk(const cams_t *cam1,const cams_t *cam2,const insopt_t *opt,
     d=SQR(x2tFx1)/(SQR(Fx[0])+SQR(Fx[1])+SQR(Ftx[0])+SQR(Ftx[1]));
 
     /* check threshold */
-    if (fabs(d)<opt->voopt.inlier_thres) {
-
-        trace(2,"large sampson distance: %.4lf\n",d);
-        return 0;
-    }
+    if (fabs(d)>thres) return 0;
     return 1;
 }
 /* get feature point for giving time------------------------------------------*/
@@ -1374,28 +1379,31 @@ static int epolarcons(const insstate_t *ins, const cams_t *cams, int ncam,
                       const track_t *track,
                       const int *fidx, int nfidx, gtime_t time, double *ratio)
 {
-    int i,j,k,nc,idx[MAX_TRACK_LEN],ok;
+    int i,j,k,nc,idx[MAX_TRACK_LEN],ok,flag;
     const feature *f1,*f2;
     const cams_t *cam1,*cam2;
 
-    trace(3,"epolarconstraint:\n");
+    trace(3,"epolarconstraint: time=%s\n",time_str(time,3));
 
     for (ok=0,i=0;i<nfidx;i++) {
-        if ((nc=findallcamera(&track->data[fidx[i]],opt,time,idx)<2)) continue;
-        for (j=0;j<nc-1;j++) {
+        if ((nc=findallcamera(&track->data[fidx[i]],opt,time,idx))<2) continue;
+        for (flag=1,j=0;j<nc-1;j++) {
 
             for (k=j+1;k<nc;k++) {
                 cam1=&cams[idx[j]]; cam2=&cams[idx[k]];
 
-                f1=getfeature(&track->data[fidx[i]],cam1->time);
-                f2=getfeature(&track->data[fidx[i]],cam2->time);
+                f1=getfeature(&track->data[fidx[i]],cam1->imgt);
+                f2=getfeature(&track->data[fidx[i]],cam2->imgt);
                 if (!f1||!f2) continue;
-                if (!xFxchk(cam1,cam2,opt,f1,f2,ins)) return 0;
-                ok++; /* inliers counts */
+                if (!xFxchk(cam1,cam2,opt,f1,f2,ins)) flag=0;
             }
         }
+        /* inliers counts */
+        if (flag) ok++;
     }
-    if (ratio) *ratio=ok/nfidx;
+    if (ratio) {
+        *ratio=(double)ok/(double)nfidx;
+    }
     return ok;
 }
 /* post-residuals validation--------------------------------------------------*/
@@ -1403,47 +1411,20 @@ static int postvalsol(const insstate_t *ins,const cams_t *cams,int ncam,const in
                       const track_t *track,const double *dx,
                       const int *fidx,int nfidx,double thres,gtime_t time)
 {
-    int i=0,j,nv=0,idx[MAX_TRACK_LEN],nc,iba,nba,ibg,nbg;
-    double *v,*r,*R,fact=thres*thres;
-
-    R=zeros(2*nfidx*MAX_TRACK_LEN,2*nfidx*MAX_TRACK_LEN);
-    v=mat(2*nfidx*MAX_TRACK_LEN,1);
-    r=mat(2*nfidx*MAX_TRACK_LEN,1);
+    int flag=0,iba,nba,ibg,nbg;
 
     iba=xiBa(opt); nba=xnBa(opt);
     ibg=xiBg(opt); nbg=xnBg(opt);
 
     /* check estimated states */
-    if (     dx[  0]==DISFLAG&&norm(dx+  0,3)>15.0*D2R) i|=1;
-    if (nba&&dx[iba]==DISFLAG&&norm(dx+iba,3)>1E5*Mg2M) i|=1;
-    if (nbg&&dx[ibg]==DISFLAG&&norm(dx+ibg,3)>15.0*D2R) i|=1;
-    if (i) {
+    if (     dx[  0]==DISFLAG&&norm(dx+  0,3)>15.0*D2R) flag|=1;
+    if (nba&&dx[iba]==DISFLAG&&norm(dx+iba,3)>1E5*Mg2M) flag|=1;
+    if (nbg&&dx[ibg]==DISFLAG&&norm(dx+ibg,3)>15.0*D2R) flag|=1;
+    if (flag) {
         trace(2,"too large estimated state error\n");
-        free(v); free(r); free(R);
         return 0;
     }
-    /* post residual validation for solution */
-    for (i=0;i<nfidx;i++) {
-        if ((nc=findallcamera(&track->data[fidx[i]],opt,time,idx))<2) continue;
-        for (j=0;j<nc;j++) {
-        
-            featureR(&track->data[fidx[i]],&track->data[fidx[i]].data[j],&cams[idx[j]],ins,NULL,r+2*nv);
-            featurev(&track->data[fidx[i]],&track->data[fidx[i]].data[j],&cams[idx[j]],ins,v+2*nv);
-            nv++;
-        }
-    }
-    for (i=0;i<2*nv;i++) R[i*2*nv+i]=r[i];
-
-    trace(3,"v=\n"); tracemat(3,v,2*nv,1,12,6);
-    trace(3,"R=\n"); tracemat(3,R,2*nv,2*nv,12,6);
-
-    for (j=0,i=0;i<2*nv&&thres;i++) {
-        if (v[i]*v[i]<fact*R[i+i*2*nv]) continue;
-        trace(2,"large residual (v=%6.3f sig=%.3f)\n",v[i],SQRT(R[i+i*nv]));
-        j++;
-    }
-    free(v); free(r); free(R);
-    return j<nv;
+    return 1;
 }
 /* add updated track features to buckets--------------------------------------*/
 static int addupd2buckets(track_t *track,const insopt_t *opt,int bw,int bh,bucket_t *buckets)
@@ -1463,14 +1444,15 @@ static int addupd2buckets(track_t *track,const insopt_t *opt,int bw,int bh,bucke
 }
 /* buckets all match features-------------------------------------------------*/
 static int bucketmatch(track_t *track,const insopt_t *opt,bucket_t *buckets,
-                       int bw,int bh,int useupd)
+                       int bw,int bh,int useupd,int tlen)
 {
-    int i,u,v;
+    int i,j,u,v;
     for (i=0;i<track->n;i++) {
         if (track->data[i].flag!=TRACK_LOST) continue;
         if (track->data[i].flag==TRACK_INIT_POS_FAIL) continue;
         if (tracks.data[i].flag==TRACK_NEW) continue;
-        if (tracks.data[i].n<MIN_TRACK_LEN) continue;
+        if (tracks.data[i].flag<MIN_TRACK_LEN) continue;
+        if (tlen&&tracks.data[i].n!=tlen) continue;
 
         u=(int)floor(track->data[i].data[0].u/BUCKET_WIDTH);
         v=(int)floor(track->data[i].data[0].v/BUCKET_HEIGHT);
@@ -1480,6 +1462,14 @@ static int bucketmatch(track_t *track,const insopt_t *opt,bucket_t *buckets,
                          &track->data[i]);
     }
     if (useupd) addupd2buckets(track,opt,bw,bh,buckets);
+
+    trace(3,"bucket matches:\n");
+    for (i=0;i<bh;i++) {
+        for (j=0;j<bw;j++) {
+            fprintf(stderr,"%2d  ",hash_counts(buckets[i*bh+j].trackfeat));
+        }
+        fprintf(stderr,"\n");
+    }
     return 1;
 }
 /* get random and unique sample of num numbers from 1:N ---------------------
@@ -1505,25 +1495,69 @@ static int getrand(int n,int num,int *sample)
     free(list);
     return ns;
 }
+/* re-find new feature--------------------------------------------------------*/
+static struct hashtable *refindfeature(const int *rlist,int nr, bucket_t *buc,
+                                       int nb,int *idx)
+{
+    struct hashtable *ht=NULL;
+    int i,nidx,nf,fcount=0;
+    while (true) {
+refind:
+        if (fcount++>MAXITER) break;
+        for (i=0,*idx=rand()%nb;i<nr;i++) if (rlist[i]==*idx) goto refind;
+        if (!(nf=hash_counts(buc[*idx].trackfeat))) continue;
+        nidx=rand()%nf;
+        if (!(ht=hash_index(&buc[*idx].trackfeat,nidx))) continue;
+        return ht;
+    }
+    return NULL;
+}
+/* get random features from tracking table------------------------------------*/
+static int rndbuckets2len(bucket_t *buckets,int nb,bucket *otrk,int nmax,int tlen)
+{
+    struct hashtable *ht,*current,*tmp;
+    int i,idx,n,nf,*rl,m=0;
+
+    if (nmax<=0) return 0;
+    rl=imat(nmax,1); n=getrand(nb,nmax,rl);
+
+    trace(3,"rl=\n"); traceimat(rl,1,n,4,1);
+    for (i=0;i<n;i++) {
+        if (!(nf=hash_counts(buckets[rl[i]].trackfeat))) {
+            if ((ht=refindfeature(rl,n,buckets,nb,&idx))) {
+
+                hash_add_featidx(&otrk->trackfeat,ht->id,ht->index,ht->ptrk);
+                rl[i]=idx;
+                m++;
+            }
+            continue;
+        }
+        if (!getrand(nf,1,&idx)) continue;
+        if (!(ht=hash_index(&buckets[rl[i]].trackfeat,idx))) {
+            continue;
+        }
+        hash_add_featidx(&otrk->trackfeat,ht->id,
+                         ht->index,
+                         ht->ptrk);
+        m++;
+    }
+    trace(3,"rl=\n"); traceimat(rl,1,n,4,1);
+
+    trace(3,"rndbuckets2len: len=%2d\n",tlen);
+    HASH_ITER(hh,otrk->trackfeat,current,tmp) {
+        fprintf(stderr,"feature id=%4d len=%2d index=%5d\n",current->id,current->ptrk->n,current->index);
+    }
+    free(rl);
+    return m;
+}
 /* generate random bucket matches---------------------------------------------*/
 static int rndbuckets(bucket_t *buckets,int nb,bucket *otrk,int nmax)
 {
-    int *rlist,n,i,idx,nf;
-    rlist=imat(1,nmax); n=getrand(nb,nmax>nb?nb:nmax,rlist);
-    struct hashtable *ht;
-
-    trace(3,"rlist=\n"); traceimat(rlist,1,nmax,4,1);
-
-    for (i=0;i<n;i++) {
-        if (!(nf=hash_counts(buckets[rlist[i]].trackfeat))) continue;
-        if (!getrand(nf,1,&idx)) continue;
-
-        if (!(ht=hash_index(&buckets[rlist[i]].trackfeat,idx))) continue;
-        hash_add_featidx(&otrk->trackfeat,ht->id,ht->index,ht->ptrk);
+    int i,n=nmax,m=0;
+    for (i=MAX_TRACK_LEN-1;i>=0;i--) {
+        if ((m=rndbuckets2len(&buckets[i],nb,otrk,n-m,i+2))<=0) break;
     }
-    n=hash_counts(otrk->trackfeat);
-    free(rlist);
-    return n;
+    return hash_counts(otrk->trackfeat);
 }
 /* check match feature geometric distribution---------------------------------*/
 static int chkgeodistribt(const bucket_t *otrk,const insstate_t *ins)
@@ -1555,22 +1589,52 @@ static int chkgeodistribt(const bucket_t *otrk,const insstate_t *ins)
     free(H); free(Q);
     return gdop<MAXGDOP;
 }
+/* check match feature geometric distribution---------------------------------*/
+static int chkgeodistribtidx(const track_t *track,const insstate_t *ins,
+                             const int *idx,int nf,double *dop)
+{
+    double K[9],xyz[3],uv[3],*Q,*H,gdop=1E9;
+    int i,j;
+
+    if (nf<3) return 0;
+    getK(ins,K); matinv(K,3);
+    H=zeros(3,nf); Q=zeros(3,3);
+    for (i=0;i<nf;i++) {
+        uv[0]=track->data[idx[i]].data[0].u;
+        uv[1]=track->data[idx[i]].data[0].v;
+        uv[2]=1.0;
+
+        matmul("NN",3,1,3,1.0,K,uv,0.0,xyz);
+        for (j=0;j<3;j++) H[3*i+j]=xyz[j]/norm(xyz,3);
+    }
+    matmul("NT",3,3,nf,1.0,H,H,0.0,Q);
+    if (!matinv(Q,3)) {
+        gdop=SQRT(Q[0]+Q[4]+Q[8]); /* gdop */
+
+        trace(3,"gdop=%.4lf\n",gdop);
+        if (dop) *dop=gdop;
+    }
+    free(H); free(Q);
+    return gdop<MAXGDOP;
+}
 /* get random feature for processing------------------------------------------*/
 static int randfeats(track_t *track,const insopt_t *opt,const insstate_t *ins,
-                     int bw,int bh,int *idx,int nfeats,int chkgeo,bucket_t *buckets)
+                     int bw,int bh,int **idx,int nfeats,int chkgeo,bucket_t *buckets)
 {
     bucket_t otrk={0};
-    struct hashtable *ht;
+    struct hashtable *ht=NULL;
     int i,n=0;
 
     if ((n=rndbuckets(buckets,bw*bh,&otrk,nfeats))<3) goto exit;
     if (chkgeo&&!chkgeodistribt(&otrk,ins)) return 0;
 
+    *idx=imat(1,n);
+
     for (i=0;i<n;i++) {
         ht=hash_index(&otrk.trackfeat,i);
-        idx[i]=ht->index;
+        (*idx)[i]=ht->index;
     }
-    trace(3,"idx=\n"); traceimat(idx,1,n,4,1);
+    trace(3,"idx=\n"); traceimat(*idx,1,n,4,1);
 exit:
     hash_destroy(&otrk.trackfeat);
     return n;
@@ -1578,75 +1642,122 @@ exit:
 /* iteration for feature point measurement update-----------------------------*/
 static int iterfeatupd(const insopt_t *opt,insstate_t *ins,cams_t *cams,int ncam,
                        double *Pc,gtime_t time,
-                       const int *fidx,int fnidx,int bw,int bh,int npost,bucket_t *buckets,
-                       bucket_t *bucketv,double *r1,double *r2,double *r3)
+                       const int *fidx,int fnidx,
+                       double *dop,double *r2,double *r3)
 {
     double *H,*R,*v,*Ho,*Ro,*vo,*Hf,*x;
-    int i,nv,nx=vofilt.nx,n=vofilt.n,index[MAX_TRACK_LEN],ki=0,flag,k;
-    int p,q,fidxv[MAX_TRACK_LEN],fnidxv,ok=0;
+    double *Hk,*Rk,*vk,*rk;
+    int i,j,nv,nx=vofilt.nx,n=vofilt.n,index[MAX_TRACK_LEN],ki=0,k,nvp,*idnx;
+    int p,q,fidxv[MAX_TRACK_LEN],ok=0,nf;
 
     trace(3,"iterfeatupd:\n");
 
-    if (fnidx<=0) return 0;
+    if (fnidx<=0||ncam==0) return 0;
 
-    H=zeros(n*4,nx); R=zeros(n*4,n*4);
-    v=zeros(n*4, 1); Hf=zeros(n*4, 3);
+    H=zeros(n*2,nx); R=zeros(n*2,n*2);
+    Hf=zeros(n*2,3); v=zeros(n*2,1);
 
-    Ho=mat(n*4,nx); Ro=mat(n*4,n*4);
-    vo=mat(n*4,1);
+    Ho=mat(n*2,nx); Ro=mat(n*2,n*2);
+    vo=mat(n*2,1);
     x=zeros(nx,1);
 
-    for (k=0;k<(fidx==NULL?tracks.nlost:fnidx);k++) {
-        i=fidx?fidx[k]:tracks.losttrack[k];
-        flag=1;
+    Hk=mat(n*2*fnidx,nx); Rk=zeros(n*2*fnidx,n*2*fnidx);
+    vk=mat(n*2*fnidx,1);
+    rk=mat(n*2*fnidx,1);
 
-        if (tracks.data[i].n<MIN_TRACK_LEN) continue;
-        if (!(nv=featmeas(&tracks.data[i],ins,opt,cams,time,H,v,R,Hf,index,&ki))) flag=0;
+    idnx=imat(1,fnidx);
 
-        /* do null-space trick */
-        if (flag&&!nulltrick(H,v,R,nx,nv,Hf,nv,3,Ho,Ro,vo,&p,&q)) flag=0;
-        if (flag==0) continue;
+    /* for each feature measurement data */
+    for (nv=0,nf=0,k=0;k<fnidx;k++) {
+        if (!(nvp=featmeas(&tracks.data[fidx[k]],ins,opt,cams,time,H,v,R,Hf,index,&ki))) continue;
 
-#if OUT_DETECT
-        /* outlier detection */
-        if (outdetect(Pc,Ho,Ro,vo,q,nx)) continue;
-#endif
-        /* ekf filter */
-        if (filter(x,Pc,Ho,vo,Ro,nx,q)) {
-            trace(2,"filter error\n");
-            continue;
+        /* null-space trick */
+        if (!nulltrick(H,v,R,nx,nvp,Hf,nvp,3,Ho,Ro,vo,&p,&q)) continue;
+
+        /* stacked matrixs */
+        for (i=0;i<q;i++) {
+            for (j=0;j<nx;j++) {Hk[(nv+i)*nx+j]=Ho[i*nx+j];}
+            vk[nv+i]=vo[i];
+            rk[nv+i]=Ro[i*q+i];
         }
-        /* update camera pose and ins states */
-        updatestat(x,ins,cams,ncam,nx,opt);
+        nv=nv+q;
+        idnx[nf++]=fidx[k];
     }
+    if (nv>3) {
+        for (i=0;i<nv;i++) Rk[i+i*nv]=rk[i];
+
+        trace(3,"Hk=\n"); tracemat(3,Hk,nx,nv,12,6);
+        trace(3,"vk=\n"); tracemat(3,vk,nv, 1,12,6);
+        trace(3,"Rk=\n");
+        tracemat(3,Rk,nv,nv,12,6);
+    }
+    else {
+        trace(2,"no feature measurement data\n");
+        free(H ); free(v ); free(R ); free(x);
+        free(Hf); free(Ho); free(vo);
+        free(Ro); free(Hk); free(Rk);
+        free(vk); free(idnx);
+        return 0;
+    }
+    /* match feature geometric distribution */
+    if (!chkgeodistribtidx(&tracks,ins,idnx,nf,dop)) {
+
+        trace(2,"geometric distribution check fail\n");
+        free(H ); free(v ); free(R ); free(x);
+        free(Hf); free(Ho); free(vo);
+        free(Ro); free(Hk); free(Rk);
+        free(vk); free(idnx);
+        return 0;
+    }
+#if OUT_DETECT
+    /* outlier detection */
+    if (nv&&outdetect(Pc,Hk,Rk,vk,nv,nx)) {
+        trace(2,"outlier detection fail\n");
+
+        free(H ); free(v ); free(R ); free(x);
+        free(Hf); free(Ho); free(vo);
+        free(Ro); free(Hk); free(Rk);
+        free(vk); free(idnx);
+        return 0;
+    }
+#endif
+    /* EKF filter */
+    if (filter(x,Pc,Hk,vk,Rk,nx,nv)) {
+        trace(2,"ekf filter fail\n");
+
+        free(H ); free(v ); free(R ); free(x);
+        free(Hf); free(Ho); free(vo);
+        free(Ro); free(Hk); free(Rk);
+        free(vk); free(idnx);
+        return 0;
+    }
+    updatestat(x,ins,cams,ncam,nx,opt); /* update all states */
 #if POST_VALIDATION
-    /* post residual validation/epipolar constraint check  */
-    for (i=0,ok=0;i<npost;i++) {
+    /* post residual validation */
+    if (!postvalsol(NULL,NULL,ncam,opt,NULL,x,NULL,0,4.0,time)) {
+        trace(2,"post residual validation fail\n");
 
-        /* get random features */
-        if (!(fnidxv=randfeats(&tracks,opt,ins,bw,bh,fidxv,16,0,bucketv))) continue;
-        if (!postvalsol(ins,cams,ncam,opt,&tracks,x,fidxv,fnidxv,4.0,time)) continue;
-        ok++;
+        free(H ); free(v ); free(R ); free(x);
+        free(Hf); free(Ho); free(vo);
+        free(Ro); free(Hk); free(Rk);
+        free(vk); free(idnx);
+        return 0;
     }
-    if (npost&&r1) *r1=ok/npost;
-
     /* epipolar constraint check */
     epolarcons(ins,cams,ncam,opt,&tracks,tracks.losttrack,tracks.nlost,time,r2);
     epolarcons(ins,cams,ncam,opt,&tracks,tracks.updtrack, tracks.nupd, time,r3);
 
-    if (*r1<RATIO_THRESHOLD&&*r2<RATIO_THRESHOLD&&
-        *r3<RATIO_THRESHOLD) {
-        
+    if (*r2<RATIO_THRESHOLD&&*r3<RATIO_THRESHOLD) {
         ok=0; /* validation fail */
     }
     else ok=1; /* validation ok */
 #else
     ok=1;
 #endif
-exit:
     free(H ); free(v ); free(R ); free(x);
     free(Hf); free(Ho); free(vo);
-    free(Ro);
+    free(Ro); free(Hk); free(Rk);
+    free(vk); free(idnx);
     return ok;
 }
 /* remove feature from track datas--------------------------------------------*/
@@ -1661,7 +1772,7 @@ static void rmfeature(trackd_t *track)
     track->last_idx=-1;
 }
 /* reset ins and camera all states--------------------------------------------*/
-static void resetallstates(insstate_t *insp,cams_t *cams,double *Pc,const insstate_t *ins,
+static void resetstates(insstate_t *insp,cams_t *cams,double *Pc,const insstate_t *ins,
                            const vofilt_t *vo)
 {
     memcpy(cams,vo->data,sizeof(cams_t)*vo->n);
@@ -1674,7 +1785,7 @@ static void updinscamstates(const insstate_t *insp,const cams_t *cams,const doub
                             insstate_t *ins,vofilt_t *vo)
 {
     int i,j;
-    memcpy(ins,&insp,sizeof(insstate_t));
+    memcpy(ins,insp,sizeof(insstate_t));
     memcpy(vo->data,cams,sizeof(cams_t)*vo->n);
 
     for (i=0;i<vo->n;i++) vo->data[i].flag=1;
@@ -1691,83 +1802,87 @@ static void updinscamstates(const insstate_t *insp,const cams_t *cams,const doub
 static int updatefeatmeas(const insopt_t *opt,insstate_t *ins,vofilt_t *vo,
                           gtime_t time)
 {
-    int bw=opt->voopt.match.img_w/BUCKET_WIDTH;
-    int bh=opt->voopt.match.img_h/BUCKET_HEIGHT;
-    insstate_t insp;
-    cams_t cams[MAX_TRACK_LEN];
+    static int bw=opt->voopt.match.img_w/BUCKET_WIDTH;
+    static int bh=opt->voopt.match.img_h/BUCKET_HEIGHT;
+    insstate_t insp,insb;
+    cams_t cams[MAX_TRACK_LEN],camb[MAX_TRACK_LEN];
     bucket_t *buckets,*bucketv;
-    int i,fidx[MAX_TRACK_LEN],fnidx,flag=1,ok=0;
-    double *Pc,r1,r2,r3;
+    int i,*fidx=NULL,fnidx,flag,count=0,less=0,upd=0;
+    double *Pc,*Pb,r1,r2,r3,r1b=0,r2b=0,r3b=0;
 
     trace(3,"updatefeatmeas:\n");
 
-    if (tracks.nexceed==0&&tracks.nlost==0) return 0;
-
+    if (tracks.nexceed==0&&tracks.nlost==0||vo->nx==0) return 0;
     Pc=mat(vo->nx,vo->nx);
-    resetallstates(&insp,cams,Pc,ins,vo);
+    Pb=mat(vo->nx,vo->nx);
+    resetstates(&insp,cams,Pc,ins,vo);
 
-    buckets=(bucket*)calloc(sizeof(bucket),(size_t)bw*bh);
+    buckets=(bucket*)calloc(sizeof(bucket),(size_t)bw*bh*MAX_TRACK_LEN);
     bucketv=(bucket*)calloc(sizeof(bucket),(size_t)bw*bh);
-    bucketmatch(&tracks,opt,buckets,bw,bh,0);
-    bucketmatch(&tracks,opt,bucketv,bw,bh,1);
+
+    for (i=0;i<MAX_TRACK_LEN;i++) bucketmatch(&tracks,opt,&buckets[bw*bh*i],bw,bh,0,i+2);
+    bucketmatch(&tracks,opt,bucketv,bw,bh,1,0);
 
     /* update exceed max track length feature */
-    if (iterfeatupd(opt,&insp,cams,vo->n,Pc,time,tracks.exceedtrack,tracks.nexceed,bw,bh,16,
-                    buckets,bucketv,
+    if (iterfeatupd(opt,&insp,cams,vo->n,Pc,time,
+                    tracks.exceedtrack,
+                    tracks.nexceed,
                     &r1,&r2,&r3)) {
-
         updinscamstates(&insp,cams,Pc,r1,r2,r3,ins,vo);
     }
     if (tracks.nlost<50) {
-        flag=0; /* less feature to update */
+        less=1; /* less feature to update */
     }
 #if BUCKET_ROBUST
     /* update track lost feature */
     while (true) {
 
         /* random feature points */
-        if (flag&&!(fnidx=randfeats(&tracks,opt,&insp,bw,bh,fidx,16,1,buckets))) continue;
+        if (!less&&!(fnidx=randfeats(&tracks,opt,&insp,bw,bh,&fidx,32,1,buckets))) continue;
 
         /* iteration update */
-        if (!iterfeatupd(opt,&insp,cams,vo->n,Pc,time,flag?fidx:NULL,fnidx,bw,bh,16,buckets,bucketv,
-                         &r1,&r2,&r3)) ok--;
-        else ok++;
-
-        if (ok==MAX_RANSAC_ITER) {
-            flag=1;
-            break; /* update ok */
+        if (!(flag=iterfeatupd(opt,&insp,cams,vo->n,Pc,time,less?tracks.losttrack:fidx,less?tracks.nlost:fnidx,&r1,&r2,&r3))) {
+            trace(2,"iteration update fail\n");
         }
-        /* reset all states */
-        resetallstates(&insp,cams,Pc,ins,vo);
+        if (fidx) free(fidx); fidx=NULL;
+        if (flag&&r2>r2b&&r3>r3b) {
+
+            memcpy(camb,cams,sizeof(cams_t)*vo->n);
+            memcpy(&insb,&insp,sizeof(insstate_t));
+            matcpy(Pb,Pc,vo->nx,vo->nx);
+            r1b=r1;
+            r2b=r2;
+            r3b=r3; upd=1; /* update ok */
+        }
+        if (count++==MAX_RANSAC_ITER) break;
+        if (less) break;
+
+        resetstates(&insp,cams,Pc,
+                    ins,vo); /* reset states */
     }
 #else
-    flag=iterfeatupd(opt,&insp,cams,vo->n,Pc,time,NULL,0,bw,bh,8,
-                     buckets,bucketv,&r1,&r2,&r3);
+    flag=iterfeatupd(opt,&insp,cams,vo->n,Pc,time,tracks.losttrack,tracks.nlost,
+                     &r1,&r2,&r3);
 #endif
-    /* remove exceed max track length features */
-    for (i=0;i<tracks.nexceed;i++) rmfeature(&tracks.data[tracks.exceedtrack[i]]);
-
-    /* remove track lost features */
+    /* remove exceed max track length/track lost features */
+    for (i=0;i<tracks.nexceed;i++) {
+        rmfeature(&tracks.data[tracks.exceedtrack[i]]);
+    }
     for (i=0;i<tracks.nlost;i++) {
         rmfeature(&tracks.data[tracks.losttrack[i]]);
     }
     /* update all states */
-    if (flag) {
-
-        updinscamstates(&insp,cams,Pc,r1,r2,r3,ins,vo);
-        trace(3,"feature measurement update ok\n");
-    }
-    else {
-        /*  update fail */
-        trace(2,"feature measurement update fail\n");
+    if (upd) {
+        updinscamstates(&insb,camb,Pb,r1b,r2b,r3b,ins,vo);
     }
     /* free all buckets */
+    for (i=0;i<bw*bh*MAX_TRACK_LEN;i++) hash_destroy(&buckets[i].trackfeat);
     for (i=0;i<bw*bh;i++) {
-        hash_destroy(&buckets[i].trackfeat);
         hash_destroy(&bucketv[i].trackfeat);
     }
-    free(buckets); free(bucketv); free(Pc);
-    return flag;
+    free(Pc); free(Pb);
+    free(buckets);
+    free(bucketv); return upd;
 }
 /* update.--------------------------------------------------------------------*/
 static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
@@ -1775,7 +1890,7 @@ static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
     trace(3,"updateall:\n");
 
     /* augment states with a new camera pose */
-    augstates(&vofilt,ins,opt,img==NULL?-1:img->id);
+    augstates(&vofilt,ins,opt,img,img==NULL?-1:img->id);
 
     /* match feature points */
     if (img==NULL||matchfeats(&matchs,img)<=0) {
@@ -1791,8 +1906,13 @@ static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
     drawalltrack(&tracks);
 
     /* update camera/ins states */
-    updatefeatmeas(opt,ins,&vofilt,img->time);
-
+    if (updatefeatmeas(opt,ins,&vofilt,img->time)) {
+        trace(3,"feature measurement update ok\n");
+    }
+    else {
+        trace(3,"feature measurement update fail\n");
+        return 0;
+    }
     /* remove redundant camera */
     rmcamera(&vofilt,opt);
     return 1;
@@ -1859,7 +1979,7 @@ extern int predictfeat(const double *R,const double *t,const double *K,
 }
 /* compute coarse feature point position--------------------------------------
  * args:    trackd_t *feat  IO  tracking feature point
- *          gtime_t　time   I   current time
+ *          gtime_t　time    I   current time
  *          double *pf      O   feature point position relative to first frame
  * return: status (1: ok, 0: fail), if return `99' means pf is in ecef
  * ---------------------------------------------------------------------------*/

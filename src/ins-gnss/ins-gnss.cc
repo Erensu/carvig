@@ -14,7 +14,6 @@
 * history : 2017/10/02 1.0 new
 *-----------------------------------------------------------------------------*/
 #include <carvig.h>
-#include <include/carvig.h>
 
 /* constants/macros ----------------------------------------------------------*/
 #define MAXDT       3600.0                 /* max time difference for ins-gnss coupled */

@@ -49,13 +49,13 @@ static void saveoutbuf(rtksvr_t *svr, unsigned char *buff, int n, int index)
 static void writesol(rtksvr_t *svr, int index)
 {
     prcopt_t *opt=&svr->rtk.opt;
-    unsigned char buff[MAXSOLMSG+1];
+    static unsigned char buff[MAXSOLMSG+1];
     static int c=0; int i,n;
 
     tracet(4,"writesol: index=%d\n",index);
 
     /* update ins update solution status */
-    if (opt->mode>=PMODE_INS_UPDATE&&opt->mode<=PMODE_INS_TGNSS) {
+    if (opt->mode>=PMODE_INS_UPDATE&&opt->mode<=PMODE_INS_TGNSS||opt->mode==PMODE_INS_LGNSS_VO) {
         ins2sol(&svr->rtk.ins,&opt->insopt,&svr->rtk.sol);
     }
     /* write solution status output stream */
@@ -163,7 +163,6 @@ static void updateobs(rtksvr_t *svr,obs_t *obs,int index,int iobs)
 
     int i,n=0; if (iobs<MAXOBSBUF) {
         for (i=0;i<obs->n;i++) {
-
             if (svr->rtk.opt.exsats[obs->data[i].sat-1]==1||!(satsys(obs->data[i].sat,NULL)&svr->rtk.opt.navsys)) continue;
 
             svr->obs[index][iobs].data[n]=obs->data[i];

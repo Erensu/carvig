@@ -750,7 +750,7 @@ typedef struct {                /* camera model struct type */
 typedef struct feature {        /* feature data type */
     gtime_t time;               /* feature point extract time */
     double u,v;                 /* pixel u,v coord */
-    int valid,status;           /* valid flag of feature/feature track status*/
+    int valid;                  /* valid flag of feature/feature track status*/
     int descrlen;               /* length of descriptor */
     double descr[DESCR_MAXLEN]; /* descriptor */
 } feat_data_t;
@@ -2388,6 +2388,7 @@ EXPORT void matpow(const double *A,int m,int p,double *B);
 EXPORT void dialog(const double *v,int n,double *D);
 EXPORT void mat2dmat(const double *a,double **b,int m,int n);
 EXPORT void dmat2mat(double **a,double *b,int m,int n);
+EXPORT int qr(const double *A,int m,int n,double *Q,double *R,int flag);
 
 EXPORT void asi_blk_mat(double *A,int m,int n,const double *B,int p ,int q,
                         int isr,int isc);

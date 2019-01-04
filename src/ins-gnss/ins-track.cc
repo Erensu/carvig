@@ -89,7 +89,6 @@ static int hash_findtrack(hashtable_t **ht,const int last_idx)
     if (s==NULL) return -1;
     index=s->index;
     HASH_DEL(*ht,s); return index;
-    return s->index;
 }
 /* find element in hash table-------------------------------------------------*/
 static hashtable *hash_find(hashtable_t **ht,const int last_idx)
@@ -144,7 +143,7 @@ static int addnewfeatimg(trackd_t *track,const feature *feat)
 
     if (track->nmax<=track->n) {
         if (track->nmax<=0) track->nmax=8; else track->nmax*=2;
-        if (!(obs_data=(feature *)realloc(track->data,sizeof(feature)*track->nmax))) {
+        if (!(obs_data=(feature*)realloc(track->data,sizeof(feature)*track->nmax))) {
             free(track->data); track->data=NULL;
 
             track->n=track->nmax=0;
@@ -186,28 +185,39 @@ static int indexofrptrack(track_t *track)
 static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame,
                     const voopt_t *opt,track_t *track)
 {
+    feature fp,fc; trackd_t ntrack,*ptk;
     int index;
 
 #if REPLACE_LOST_FEATURE
     /* find index of lost track feature */
-    if ((index=indexofrptrack(track))>=0) return index;
+    if ((index=indexofrptrack(track))>=0) {
 
+        /* new track. */
+        fp.time=tp; fp.u=mp->up; fp.v=mp->vp; fp.valid=1;
+        fc.time=tc; fc.u=mp->uc; fc.v=mp->vc; fc.valid=1;
+
+        ptk=&track->data[index]; ptk->n=0;
+        addnewfeatimg(ptk,&fp);
+        addnewfeatimg(ptk,&fc);
+
+        ptk->first_frame=curr_frame-1; /* update frame id */
+        ptk->last_frame =curr_frame;
+        ptk->last_idx   =mp->ic;
+        ptk->ts=tp;
+        ptk->te=tc;
+        ptk->flag=TRACK_NEW;
+        return index;
+    }
 #endif
     /* new track. */
-    feature fp,fc; trackd_t ntrack;
+    fp.time=tp; fp.u=mp->up; fp.v=mp->vp; fp.valid=1;
+    fc.time=tc; fc.u=mp->uc; fc.v=mp->vc; fc.valid=1;
 
-    fp.time=tp; fp.u=mp->up; fp.v=mp->vp;
-    fp.valid=1; fp.status=FEAT_CREATE;
-
-    fc.time=tc; fc.u=mp->uc; fc.v=mp->vc;
-    fc.valid=1; fc.status=FEAT_CREATE;
-
-    /* add track feature. */
     inittrack(&ntrack,opt);
-    addnewfeatimg(&ntrack,&fp); addnewfeatimg(&ntrack,&fc);
+    addnewfeatimg(&ntrack,&fp);
+    addnewfeatimg(&ntrack,&fc); /* add track feature. */
 
-    /* update frame id */
-    ntrack.first_frame=curr_frame-1;
+    ntrack.first_frame=curr_frame-1; /* update frame id */
     ntrack.last_frame =curr_frame;
     ntrack.last_idx   =mp->ic;
     ntrack.ts=tp;
@@ -215,10 +225,7 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
     ntrack.flag=TRACK_NEW;
 
     /* add new track to track table */
-    if (addnewtrack(track,&ntrack)<=0) {
-        trace(2,"add new track fail\n");
-        return 0;
-    }
+    if (addnewtrack(track,&ntrack)<=0) return 0;
     return track->n-1;
 }
 /* add image data to image buffer---------------------------------------------*/
@@ -242,7 +249,7 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
     register int i,idx=0;
     feature feat;
 
-    track->nnew=0; track->nupd=0;
+    track->nnew=0; track->nupd=0; /* initial feature numbers */
 
     trace(3,"match2track:\n");
 
@@ -276,7 +283,7 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         if ((idx=findtrack(track,&mset->data[i]))<0) {
 
             /* create a new track */
-            if ((idx=newtrack(&mset->data[i],tp,tc,curr_frame,opt,track))<0) return 0;
+            if ((idx=newtrack(&mset->data[i],tp,tc,curr_frame,opt,track))<0) continue;
 
             /* update index */
             track->newtrack[track->nnew]=idx;
@@ -292,7 +299,7 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         feat.v=mset->data[i].vc;
 
         feat.time=tc;
-        feat.valid=1; feat.status=FEAT_CREATE;
+        feat.valid=1;
         addnewfeatimg(&track->data[idx],&feat);
 
         /* track flag. */

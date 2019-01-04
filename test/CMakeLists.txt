@@ -45,6 +45,28 @@ target_link_libraries(test_track carvig ${OpenCV_LIBS})
 add_executable(test_p3p test_p3p.cc)
 target_link_libraries(test_p3p carvig ${OpenCV_LIBS})
 
+add_executable(test_playback test_playback.cc)
+target_link_libraries(test_playback carvig ${OpenCV_LIBS})
+
+add_executable(test_null test_null.cc)
+target_link_libraries(test_null carvig ${OpenCV_LIBS})
+
+add_executable(test_kalibr_rosbag test_kalibr_rosbag.cc)
+target_link_libraries(test_kalibr_rosbag carvig ${OpenCV_LIBS})
+
+add_executable(test_camimu_alignment test_camimu_alignment.cc)
+target_link_libraries(test_camimu_alignment carvig ${OpenCV_LIBS})
+
+add_executable(test_pose_meas test_pose_meas.cc)
+target_link_libraries(test_pose_meas carvig ${OpenCV_LIBS})
+
+add_executable(test_chieral test_chieral.cc)
+target_link_libraries(test_chieral carvig ${OpenCV_LIBS})
+
+add_executable(test_qr test_qr.cc)
+target_link_libraries(test_qr carvig ${OpenCV_LIBS})
+
+
 
 
 

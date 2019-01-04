@@ -114,18 +114,18 @@ extern void insstatocov(const insopt_t *opt,const insstate_t *ins,double *Pa,
 {
     int i,j;
     for (i=0;i<3;i++) for (j=0;j<3;j++) {
-        if (Pa) Pa[i+j*3]=opt->updint==UPDINT_IMU?
-                ins->P[(i+0)+(j+0)*ins->nx]:ins->Pa[(i+0)+(j+0)*ins->nx];
-        if (Pv) Pv[i+j*3]=opt->updint==UPDINT_IMU?
-                ins->P[(i+3)+(j+3)*ins->nx]:ins->Pa[(i+3)+(j+3)*ins->nx];
-        if (Pp) Pp[i+j*3]=opt->updint==UPDINT_IMU?
-                ins->P[(i+6)+(j+6)*ins->nx]:ins->Pa[(i+6)+(j+6)*ins->nx];
+        if (Pa&&ins->P&&ins->Pa) Pa[i+j*3]=opt->updint==UPDINT_IMU?
+                                 ins->P[(i+0)+(j+0)*ins->nx]:ins->Pa[(i+0)+(j+0)*ins->nx];
+        if (Pv&&ins->P&&ins->Pa) Pv[i+j*3]=opt->updint==UPDINT_IMU?
+                                 ins->P[(i+3)+(j+3)*ins->nx]:ins->Pa[(i+3)+(j+3)*ins->nx];
+        if (Pp&&ins->P&&ins->Pa) Pp[i+j*3]=opt->updint==UPDINT_IMU?
+                                 ins->P[(i+6)+(j+6)*ins->nx]:ins->Pa[(i+6)+(j+6)*ins->nx];
     }
     if (ins->gstat==SOLQ_FIX&&((prcopt_t*)opt->gopt)->mode==PMODE_INS_TGNSS) {
         for (i=0;i<3;i++) for (j=0;j<3;j++) {
-            if (Pa) Pa[i+j*3]=ins->Pb[(i+0)+(j+0)*ins->nb];
-            if (Pv) Pv[i+j*3]=ins->Pb[(i+3)+(j+3)*ins->nb];
-            if (Pp) Pp[i+j*3]=ins->Pb[(i+6)+(j+6)*ins->nb];
+            if (Pa&&ins->Pb) Pa[i+j*3]=ins->Pb[(i+0)+(j+0)*ins->nb];
+            if (Pv&&ins->Pb) Pv[i+j*3]=ins->Pb[(i+3)+(j+3)*ins->nb];
+            if (Pp&&ins->Pb) Pp[i+j*3]=ins->Pb[(i+6)+(j+6)*ins->nb];
         }
     }
 }

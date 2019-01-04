@@ -1240,8 +1240,6 @@ static int parabolic_fit(const uint8_t* I1_du,const uint8_t* I1_dv,const int32_t
     double *c,*b,*x,divisor,ddv,ddu;
     register int i,j,cost_curr;
 
-    trace(3,"parabolic_fit:\n");
-
     /* check if parabolic fitting is feasible (descriptors are within margin) */
     if (u2-3<margin||u2+3>dims2[0]-1-margin||
         v2-3<margin||v2+3>dims2[1]-1-margin) {
