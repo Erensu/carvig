@@ -15,7 +15,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2018/05/06 1.0 new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* distorts a point on the unit plane (in camera coordinates) according to the
  * radtan distortion model

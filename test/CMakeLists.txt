@@ -66,6 +66,9 @@ target_link_libraries(test_chieral carvig ${OpenCV_LIBS})
 add_executable(test_qr test_qr.cc)
 target_link_libraries(test_qr carvig ${OpenCV_LIBS})
 
+add_executable(test_ins_gnss_vo_sim test_ins_gnss_vo_sim.cc)
+target_link_libraries(test_ins_gnss_vo_sim carvig ${OpenCV_LIBS})
+
 
 
 

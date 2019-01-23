@@ -13,11 +13,11 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/11/13 1.0 new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants ----------------------------------------------------------------*/
 #define ORDERS        10           /* orders of approximate exponential of matrix */
-#define MAXRES        10.0*D2R     /* max residual for pose filter */
+#define MAXRES_POSE        10.0*D2R     /* max residual for pose filter */
 #define VARPOSE       30.0*D2R     /* variance of pose measurement */
 #define MAXTIMEDIFF   1.0          /* max difference between ins and pose measurement time */
 #define JACOB_LEFT    1            /* use left jacobians of misalignment of camera to imu */
@@ -383,7 +383,7 @@ static int poseantfilt(const insopt_t *opt,const pose_meas_t *data,
     matmul33("TNN",Cne,Cbe,ins->Cvb,3,3,3,3,Cvn0);
     so3_log(Cvn0,phi0,&omg0);
     so3_log(Cvn ,phi ,&omg );
-    if (fabs(omg-omg0)>MAXRES) {
+    if (fabs(omg-omg0)>MAXRES_POSE) {
         trace(2,"large residual\n");
         return 0;
     }
@@ -398,7 +398,7 @@ static int poseantfilt(const insopt_t *opt,const pose_meas_t *data,
 
     /* H,v and R matrix from measurements */
     for (i=0,nv=0;i<3;i++) {
-        if (fabs(v[nv]=phi[i]-phi0[i])>MAXRES) {
+        if (fabs(v[nv]=phi[i]-phi0[i])>MAXRES_POSE) {
             continue;
         }
         if (H) {
@@ -508,11 +508,11 @@ static int posecamfilt(const insopt_t *opt,const pose_meas_t *data,
     for (i=0;i<3;i++) {
 
 #if JACOB_LEFT
-        if (fabs(v[nv]=phi[i]-phi1[i])>MAXRES) {
+        if (fabs(v[nv]=phi[i]-phi1[i])>MAXRES_POSE) {
             continue;
         }
 #else
-        if (fabs(v[nv]=phi[i]-phi0[i])>MAXRES) {
+        if (fabs(v[nv]=phi[i]-phi0[i])>MAXRES_POSE) {
             continue;
         }
 #endif

@@ -10,7 +10,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/09/29 1.0 new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants -----------------------------------------------------------------*/
 #define MAXDT   60.0                /* max interval to update imu (s) */
@@ -397,7 +397,7 @@ extern void gravity(const double *re, double *ge)
     ned2xyz(pos,Cne); 
     matmul3v("N",Cne,gn,ge);
 }
-/* Calculates  acceleration due to gravity resolved about ecef-frame ---------
+/* calculates  acceleration due to gravity resolved about ecef-frame ---------
  * args  : double *pos     I   cartesian position of body frame w.r.t. ecef frame,
  *                             resolved about ecef-frame axes (m)
  *         double *g       O   Acceleration due to gravity (m/s^2) in ecef-frame
@@ -582,7 +582,7 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
             ins_errmodel(data->accl,data->gyro,ins->fb,ins->omgb,ins);
         }
         else {
-            ins->omgb[i]=data->gyro[i]-ins->bg[i]; /* (4.18) */
+            ins->omgb[i]=data->gyro[i]-ins->bg[i]; 
             ins->fb  [i]=data->accl[i]-ins->ba[i];
         }
     }
@@ -603,19 +603,19 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     if ((a=norm(alpha,3))>1E-8) {
         a1=(1.0-cos(a))/SQR(a); a2=1.0/SQR(a)*(1.0-sin(a)/a);
         matmul3("NN",Ca,Ca,Ca2);
-        for (i=0;i<9;i++) Cbb[i]+=a1*Ca[i]+a2*Ca2[i]; /* 5.80 */
+        for (i=0;i<9;i++) Cbb[i]+=a1*Ca[i]+a2*Ca2[i]; 
         skewsym3(ae,Omg);
         matmul3("NN",Cbe,Cbb,Ca);
         matmul3("NN",Omg,Cbe,Ca2);
-        for (i=0;i<9;i++) Cbe[i]=Ca[i]-0.5*Ca2[i]; /* 5.81 */
+        for (i=0;i<9;i++) Cbe[i]=Ca[i]-0.5*Ca2[i];
     }
     else {
         skewsym3(ae,Omg);
         matmul3("NN",Omg,Cbe,Ca);
-        for (i=0;i<9;i++) Cbe[i]-=0.5*Ca[i]; /* 5.81 */
+        for (i=0;i<9;i++) Cbe[i]-=0.5*Ca[i];
     }
 #else
-    for (i=0;i<9;i++) Cbe[i]=(Cbe[i]+ins->Cbe[i])/2.0; /* (5.21) */
+    for (i=0;i<9;i++) Cbe[i]=(Cbe[i]+ins->Cbe[i])/2.0;
 #endif
     /* specific-force/gravity in e-frame */
     for (i=0;i<3;i++) fb[i]=ins->fb[i]+dvs[i]/dt;
@@ -628,9 +628,9 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     /* update velocity/position */
     matmul3v("N",Omge,ins->ve,cori);
     for (i=0;i<3;i++) {
-        ins->ae[i]=fe[i]+ge[i]-2.0*cori[i]; /* (5.28) */
-        ins->ve[i]+=ins->ae[i]*dt; /* 5.29 */
-        ins->re[i]+=ins->ve[i]*dt+ins->ae[i]/2.0*dt*dt; /* (5.31) */
+        ins->ae[i]=fe[i]+ge[i]-2.0*cori[i]; 
+        ins->ve[i]+=ins->ae[i]*dt;
+        ins->re[i]+=ins->ve[i]*dt+ins->ae[i]/2.0*dt*dt;
     }
     /* update ins state in n-frame */
     update_ins_state_n(ins);
@@ -1244,6 +1244,143 @@ extern int updateinsn(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     ins->stat =INSS_MECH;
 
     trace(5,"ins(+)=\n"); traceins(5,ins);
+    return 1;
+}
+/* calculates specific force and angular rate from input w.r.t and resolved----
+ * along ecef-frame axes
+ * args:    double dt     I  time interval between epochs (s)
+ *          double *Cbe1  I  body-to-ecef-frame coordinate transformation matrix
+ *          double *Cbe0  I  previous body-to-ecef-frame coordinate transformation
+ *                           matrix
+ *          double *ve1   I  velocity of body frame w.r.t. ecef frame, resolved along
+ *                           ecef-frame axes (m/s)
+ *          double *ve0   I  previous velocity of body frame w.r.t. ecef frame,
+ *                           resolved along ECEF-frame axes (m/s)
+ *          double *re    I  cartesian position of body frame w.r.t. ecef frame,
+ *                           resolved along ecef-frame axes (m)
+ *          double *fb    O  specific force of body frame
+ *          double *omgb  O  angular rate of body frame
+ * return : status (1: ok,0: fail)
+ * ---------------------------------------------------------------------------*/
+extern int kinematicsecef(const double dt,const double *Cbe1,const double *Cbe0,
+                          const double *ve1,const double *ve0,
+                          const double *re1,
+                          double *fb,double *omgb)
+{
+    double Cbb[9]={1,0,0,0,1,0,0,0,1};
+    double we=OMGE*dt,We[9],Con[9],omg[3],fe[3],wie[3]={0};
+    double s,ge[3],W[9],T[9],a,a1,a2,Ab[9];
+    double fibe[3],Ab2[9],ae[3]={0},Omg[9],Ca[9];
+    int i;
+
+    trace(3,"kinematicsecef:\n");
+
+    if (dt<=0.0) {
+        setzero(fb,1,3); setzero(omgb,1,3);
+        return 1;
+    }
+    We[0]= cos(we); We[3]=sin(we); We[6]=0.0;
+    We[1]=-sin(we); We[4]=cos(we); We[7]=0.0;
+    We[2]=0.0;
+    We[5]=0.0;
+    We[8]=1.0;
+
+    /* approximate angular rate w.r.t. inertial frame */
+    matmul33("TNN",Cbe1,We,Cbe0,3,3,3,3,Con);
+    omg[0]=0.5*(Con[7]-Con[5]);
+    omg[1]=0.5*(Con[2]-Con[6]);
+    omg[2]=0.5*(Con[3]-Con[1]);
+
+    s=acos(0.5*(Con[0]+Con[4]+Con[8]-1.0)); /* calculate and apply the scaling factor */
+    if (s>1E-8) {
+        for (i=0;i<3;i++) omg[i]=omg[i]*s/sin(s);
+    }
+    if (omgb) {
+        for (i=0;i<3;i++) omgb[i]=omg[i]/dt; /* calculate the angular rate */
+    }
+    for (i=0;i<3;i++) fe[i]=(ve1[i]-ve0[i])/dt;
+    pregrav(re1,ge); wie[2]=OMGE;
+    skewsym3(wie,W);
+
+    matmul("NN",3,1,3,1.0,W,ve0,0.0,T);
+    for (i=0;i<3;i++) {
+        fibe[i]=fe[i]-ge[i]+2.0*T[i];
+    }
+    skewsym3(omg,Ab); ae[2]=OMGE*dt;
+
+    /* average body-to-ecef coordinate transformation */
+    if ((a=norm(omg,3))>1E-8) {
+        a1=(1.0-cos(a))/SQR(a); a2=1.0/SQR(a)*(1.0-sin(a)/a);
+
+        matmul3("NN",Ab,Ab,Ab2);
+        for (i=0;i<9;i++) Cbb[i]+=a1*Ab[i]+a2*Ab2[i];
+        skewsym3(ae,Omg);
+        matmul3("NN",Cbe0,Cbb,Ab);
+        matmul3("NN",Omg,Cbe0,Ab2);
+        for (i=0;i<9;i++) {
+            Ca[i]=Ab[i]-0.5*Ab2[i];
+        }
+    }
+    else {
+        skewsym3(ae,Omg); matmul3("NN",Omg,Cbe0,Ca);
+        for (i=0;i<9;i++) {
+            Ca[i]=Cbe0[i]-0.5*Ca[i];
+        }
+    }
+    if (matinv(Ca,3)) {
+        return 0;
+    }
+    if (fb) {
+        matmul("NN",3,1,3,1.0,Ca,fibe,0.0,fb);
+    }
+    return 1;
+}
+/* generates a uniform distributed random number between min and max --------*/
+static double getuniform(double min,double max)
+{
+    return 1.0*rand()/RAND_MAX*(max-min)+min;
+}
+/* creates gaussian distributed random numbers (Box-Müller method)-----------*/
+static double getgaussian(double std)
+{
+    if (std<0.0) std=-std;
+    double x1,x2,w,y1;
+    do {
+        x1=getuniform(-1.0,1.0); x2=getuniform(-1.0,1.0); w=x1*x1+x2*x2;
+    } while (w>=1.0);
+    w=sqrt((-2.0*log(w))/w); y1=x1*w; return std*y1;
+}
+/* simulates an inertial measurement unit-------------------------------------
+ * args:    double *fb      IO  specific force of body frame (m/s^2)
+ *          double *omgb    IO  angular rate of body frame (rad/s)
+ *          imu_err_t *err  I   imu error model
+ *          double dt       I   time interval between epochs (s)
+ * return: status (1: ok,0: fail)
+ * --------------------------------------------------------------------------*/
+extern int simimumeas(double *fb,double *omgb,const imu_err_t *err,double dt)
+{
+    double ng[3],na[3],Sg[9],Sa[9],I[9]={1,0,0,0,1,0,0,0,1};
+    double domg[3],fb0[3],omg0[3];
+    int i;
+
+    trace(3,"simimumeas:\n");
+
+    if (fabs(dt)<1E-10) return 0;
+    for (i=0;i<3;i++) {
+        ng[i]=err->wgn[i]/sqrt(dt)*getgaussian(0.5);
+        na[i]=err->wan[i]/sqrt(dt)*getgaussian(0.5);
+    }
+    for (i=0;i<9;i++) {
+        Sg[i]=err->Mg[i]+I[i]; Sa[i]=err->Ma[i]+I[i];
+    }
+    matmul("NN",3,1,3,1.0,Sg,omgb,0.0,omg0);
+    matmul("NN",3,1,3,1.0,Sa,fb,0.0,fb0);
+    matmul("NN",3,1,3,1.0,err->Gg,fb,0.0,domg);
+
+    for (i=0;i<3;i++) {
+        omgb[i]=omg0[i]+ng[i]+domg[i]+err->bg[i];
+        fb[i]=fb0[i]+na[i]+err->ba[i];
+    }
     return 1;
 }
 

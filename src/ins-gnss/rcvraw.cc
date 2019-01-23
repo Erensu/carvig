@@ -33,8 +33,7 @@
 *           2017/05/26 1.14 support TERSUS
 *-----------------------------------------------------------------------------*/
 #include <stdint.h>
-#include <carvig.h>
-#include <include/carvig.h>
+#include "carvig.h"
 
 #define P2_34       5.820766091346740E-11 /* 2^-34 */
 #define P2_46       1.421085471520200E-14 /* 2^-46 */
@@ -899,7 +898,7 @@ extern int init_raw(raw_t *raw, int format)
     raw->nav.seph =NULL;
     raw->half_cyc =NULL;
     raw->rcv_data =NULL;
-    
+
     if (!(raw->obs.data =(obsd_t *)malloc(sizeof(obsd_t)*MAXOBS))||
         !(raw->obuf.data=(obsd_t *)malloc(sizeof(obsd_t)*MAXOBS))||
         !(raw->nav.eph  =(eph_t  *)malloc(sizeof(eph_t )*MAXSAT))||
@@ -1026,11 +1025,15 @@ extern int input_raw(raw_t *raw, int format, unsigned char data)
         case STRFMT_UBXM8: return input_ubxm8(raw,data);
         case STRFMT_UBXSOL:return input_ubxsol(raw,data);
         case STRFMT_M39  : return input_m39   (raw,data);
-        case STRFMT_RINEX_RT: return input_rinex  (raw,data);
+        case STRFMT_RINEX_RT: return input_rinex    (raw,data);
         case STRFMT_M39MIX  : return input_m39_mix  (raw,data);
         case STRFMT_OEM6_SOL: return input_oem6_sol (raw,data);
         case STRFMT_OEM6_POSE:return input_oem6_pose(raw,data);
         case STRFMT_OEM6_RAW: return input_oem6_raw (raw,data);
+        case STRFMT_IGVSIM_FEAT:    return input_igvsim_feat   (raw,data);
+        case STRFMT_IGVSIM_IMU :    return input_igvsim_imu    (raw,data);
+        case STRFMT_IGVSIM_GNSS:    return input_igvsim_gnss   (raw,data);
+        case STRFMT_IGVSIM_FEATALL: return input_igvsim_featall(raw,data);
     }
     return 0;
 }

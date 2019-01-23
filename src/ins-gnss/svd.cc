@@ -6,7 +6,7 @@
  * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
  * history : 2017/11/30 1.0 new
 -----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants and macros -----------------------------------------------------*/
 #define SIGN(a,b) ((b)>=0.0?fabs(a):-fabs(a))

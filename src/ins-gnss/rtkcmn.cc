@@ -1797,6 +1797,14 @@ extern double stds(const double *val,int n)
     
     std=sqrt(dot(vv,vv,n)/n); free(vv); return std;
 }
+/* average data--------------------------------------------------------------*/
+extern double avg(const double *val,int n)
+{
+    double s=0.0;
+    int i;
+    for (i=0;i<n;i++) s+=val[i];
+    return s/n;
+}
 /* normal distribution functional -------------------------------------------*/
 extern double norm_distri(const double u)
 {
@@ -1807,8 +1815,8 @@ extern double norm_distri(const double u)
 
     double p=1.0+y*(0.0705230784+y*(0.0422820123+y*(0.0092705272+
                  y*(0.0001520143+y*(0.0002765672+y*0.0000430638)))));
-    double er =1- pow( p, -16.0 );
-    p=(u<0.0)? 0.5-0.5*er: 0.5+0.5*er;
+    double er=1.0-pow(p,-16.0);
+    p=(u<0.0)?0.5-0.5*er:0.5+0.5*er;
     return p;
 }
 extern double re_norm(double p)

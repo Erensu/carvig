@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
-* sbas.c : sbas functions
+* sbas.cc : sbas functions
 *
 * option : -DRRCENA  enable rrc correction
 *          

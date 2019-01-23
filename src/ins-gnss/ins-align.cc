@@ -10,7 +10,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/10/12 1.0 new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants -----------------------------------------------------------------*/
 #define MIN_ACCL    (0.05)           /* check whether it is static for accl imu data (m/s^2) */

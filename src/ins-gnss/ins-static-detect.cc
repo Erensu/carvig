@@ -10,7 +10,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/11/03 1.0 new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* static detector for per accl axis,this function check accl variance--------*/
 static int detstaticaxis(const imud_t *imu,int n,int axis,double thres)

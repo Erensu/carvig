@@ -14,7 +14,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2018/09/25 1.0 new
 *----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants-----------------------------------------------------------------*/
 #define MAXTIMEDIFF  3.0                 /* max time difference for RTS smoother */

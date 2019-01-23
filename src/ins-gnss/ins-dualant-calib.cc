@@ -13,7 +13,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2018/05/29 1.0 new
 *----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 #define MAXTIMEDIFF  1.0          /* max difference between ins and pose measurement time */
 #define VARPOSE      30.0*D2R     /* variance of pose measurement */

@@ -13,7 +13,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/11/13 1.0 new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants -----------------------------------------------------------------*/
 #define VARVEL      SQR(0.1)     /* variance of odometry velocity measurement */

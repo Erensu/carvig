@@ -13,7 +13,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/11/11 1.0 new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants -----------------------------------------------------------------*/
 #define MAXVEL      0.1           /* max velocity for using non-holonomic constraint */

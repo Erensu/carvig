@@ -11,8 +11,8 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2018/09/06 1.0 new
 *----------------------------------------------------------------------------*/
-#include <carvig.h>
-#include <geomag.h>
+#include "carvig.h"
+#include "geomag.h"
 
 /* constants ----------------------------------------------------------------*/
 #define VAR_MAG    (5.0*D2R)       /* variance of magnetic heading */

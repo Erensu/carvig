@@ -109,6 +109,9 @@ extern int inittrack(trackd_t *data,const voopt_t *opt)
 
     data->ts=data->te=t0;
     data->n=data->nmax=0; data->uid=id_seed++;
+    data->first_frame=0;
+    data->last_frame =0;
+    data->last_idx   =0;
     data->data=NULL;
     return 1;
 }
@@ -125,9 +128,27 @@ static int findtrack(const track_t *track,const match_point *mp)
     return -1;
 #endif
 }
+/* add a feature to a frame---------------------------------------------------*/
+static void hash_addfeat(feature** feats,int uid,double u,double v,gtime_t time)
+{
+    feature *s=NULL;
+    HASH_FIND_INT(*feats,&uid,s);  /* id already in the hash? */
+    if (s==NULL) {
+
+        s=(feature*)malloc(sizeof(feature));
+        s->time=time;
+        s->uid=uid;
+        s->u=u;
+        s->v=v;
+        HASH_ADD_INT(*feats,uid,s);  /* id: name of key field */
+    }
+}
 /* copy image data------------------------------------------------------------*/
 static void copyimg(img_t *out,const img_t *in)
 {
+    feature *current,*tmp;
+
+    /* update image raw data */
     if (in==NULL) return;
     out->data=(unsigned char*)malloc(sizeof(unsigned char)*in->w*in->h);
     memcpy(out->data,in->data,sizeof(unsigned char)*in->w*in->h);
@@ -135,6 +156,18 @@ static void copyimg(img_t *out,const img_t *in)
     out->w=in->w;
     out->id=in->id;
     out->time=in->time;
+
+    /* update feature points */
+    HASH_ITER(hh,out->feat,current,tmp) {
+
+        /* delete feature point */
+        HASH_DEL(out->feat,current);
+        free(current);
+    }
+    out->feat=NULL;
+    HASH_ITER(hh,in->feat,current,tmp) {
+        hash_addfeat(&out->feat,current->uid,current->u,current->v,current->time);
+    }
 }
 /* add new feature and image data to track------------------------------------*/
 static int addnewfeatimg(trackd_t *track,const feature *feat)
@@ -186,7 +219,7 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
                     const voopt_t *opt,track_t *track)
 {
     feature fp,fc; trackd_t ntrack,*ptk;
-    int index;
+    int index,i;
 
 #if REPLACE_LOST_FEATURE
     /* find index of lost track feature */
@@ -195,6 +228,8 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
         /* new track. */
         fp.time=tp; fp.u=mp->up; fp.v=mp->vp; fp.valid=1;
         fc.time=tc; fc.u=mp->uc; fc.v=mp->vc; fc.valid=1;
+        fp.uid=id_seed;
+        fc.uid=id_seed;
 
         ptk=&track->data[index]; ptk->n=0;
         addnewfeatimg(ptk,&fp);
@@ -203,8 +238,11 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
         ptk->first_frame=curr_frame-1; /* update frame id */
         ptk->last_frame =curr_frame;
         ptk->last_idx   =mp->ic;
+        ptk->uid=id_seed++; /* new feature id */
         ptk->ts=tp;
         ptk->te=tc;
+    
+        for (i=0;i<3;i++) ptk->xyz[i]=0.0;
         ptk->flag=TRACK_NEW;
         return index;
     }
@@ -214,6 +252,10 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
     fc.time=tc; fc.u=mp->uc; fc.v=mp->vc; fc.valid=1;
 
     inittrack(&ntrack,opt);
+
+    fp.uid=ntrack.uid;
+    fc.uid=ntrack.uid;
+
     addnewfeatimg(&ntrack,&fp);
     addnewfeatimg(&ntrack,&fc); /* add track feature. */
 
@@ -222,6 +264,7 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
     ntrack.last_idx   =mp->ic;
     ntrack.ts=tp;
     ntrack.te=tc;
+    for (i=0;i<3;i++) ntrack.xyz[i]=0.0;
     ntrack.flag=TRACK_NEW;
 
     /* add new track to track table */
@@ -232,6 +275,76 @@ static int newtrack(const match_point_t *mp,gtime_t tp,gtime_t tc,int curr_frame
 static void addimg2buf(const img_t *data)
 {
     copyimg(&imgbuf.imgbuf[imgbuf.index++%MAX_NUM_IMG],data);
+}
+/* update tracking feature point data-----------------------------------------*/
+static int updatetrack(const img_t *pimg,const img_t *cimg,const voopt_t *opt,int curr_frame, gtime_t tp,
+                       gtime_t tc,track_t *track)
+{
+    trackd_t ntrack={0},*ptk;
+    feature *current,*tmp;
+    int i,find;
+
+    trace(3,"updatetrack:\n");
+
+    HASH_ITER(hh,cimg->feat,current,tmp) {
+        for (find=0,i=0;i<track->n;i++) {
+            if (current->uid==track->data[i].uid&&track->data[i].last_idx!=-1) {
+                find=1;
+                break;
+            }
+        }
+        if (find) {
+            /* update track */
+            addnewfeatimg(&track->data[i],current);
+
+            track->data[i].last_frame=curr_frame;
+            track->data[i].te=tc;
+
+            /* update index */
+            track->updtrack[track->nupd++]=i;
+            track->data[i].flag=TRACK_UPDATED;
+        }
+        else {
+            /* replace lost track */
+            for (ptk=NULL,i=0;i<track->n;i++) {
+                if (track->data[i].last_idx==-1) {ptk=&track->data[i]; break;}
+            }
+            if (ptk) {
+                ptk->first_frame=curr_frame; /* update frame id */
+                ptk->last_frame =curr_frame;
+                ptk->last_idx=0;
+                ptk->ts=tc;
+                ptk->te=tc;
+                ptk->uid=current->uid;
+                ptk->flag=TRACK_NEW;
+                ptk->n=0;
+
+                setzero(ptk->xyz,1,3);
+                addnewfeatimg(ptk,current);
+            }
+            else {
+                /* new track */
+                inittrack(&ntrack,opt);
+                addnewfeatimg(&ntrack,current);
+
+                ntrack.first_frame=curr_frame; /* update frame id */
+                ntrack.last_frame =curr_frame;
+                ntrack.ts=tc;
+                ntrack.te=tc;
+                ntrack.flag=TRACK_NEW;
+                ntrack.uid =current->uid;
+
+                /* add to track list */
+                if (addnewtrack(track,&ntrack)<=0) continue;
+            }
+            /* update index */
+            track->newtrack[track->nnew]=i;
+            track->nnew++;
+        }
+    }
+    /* add image data to buffer */
+    addimg2buf(cimg);
+    return track->n>0;
 }
 /* matched feature points set data convert to track set-----------------------
  * args:  match_set *set   I  matched feature points set data
@@ -254,8 +367,10 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
     trace(3,"match2track:\n");
 
     /* initial flag of all track */
-    for (i=0;i<track->n;i++) track->data[i].flag=TRACK_LOST;
-
+    for (i=0;i<track->n;i++) if (track->data[i].last_idx!=-1) track->data[i].flag=TRACK_LOST;
+    if (cimg->feat) {
+        return updatetrack(pimg,cimg,opt,curr_frame,tp,tc,track);
+    }
     /* initial track */
     if (track->n==0) {
         for (i=0;i<mset->n;i++) {
@@ -295,6 +410,8 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
         track->data[idx].data[track->data[idx].n-1].v=mset->data[i].vp;
 #endif
         /* update track */
+        feat.uid=track->data[idx].uid;
+
         feat.u=mset->data[i].uc;
         feat.v=mset->data[i].vc;
 

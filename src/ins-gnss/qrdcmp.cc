@@ -6,7 +6,7 @@
  * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
  * history : 2018/01/04 1.0 new
 -----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* helper function of QR decomposition----------------------------------------*/
 static int qrdcmp(double **A, int m, int n,double **Qo,double **Ro)
@@ -28,6 +28,7 @@ static int qrdcmp(double **A, int m, int n,double **Qo,double **Ro)
             w=fabs(A[i][k]); if (w>u) u=w;
         }
         alpha=0.0;
+        if (fabs(u)<1E-20) continue;
         for (i=k;i<=m-1;i++) {
             t=A[i][k]/u;
             alpha=alpha+t*t;

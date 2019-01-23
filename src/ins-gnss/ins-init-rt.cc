@@ -13,7 +13,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/01/21 1.0 new
 *----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants ----------------------------------------------------------------*/
 #define MINSOL        5                  /* max number of solution data */
@@ -293,3 +293,44 @@ extern int insinitdualant(rtksvr_t *svr,const pose_meas_t *pose,const sol_t *sol
     trace(3,"initial ins state ok\n");
     return 1;
 }
+/* initial ins states from user given pose------------------------------------
+ * args:  rtksvr_t *svr     IO  rtk server
+ *        imud_t *imu       I   imu measurement data
+ * return : 1 (ok) or 0 (fail)
+ * --------------------------------------------------------------------------*/
+extern int insinitgiven(rtksvr_t *svr,const imud_t *imu)
+{
+    insopt_t *iopt=&svr->rtk.opt.insopt;
+    insstate_t *ins=&svr->rtk.ins;
+    double Cnb[9],Cne[9],rpy[3],rn0[3];
+
+    trace(3,"insinitgiven:\n");
+
+    if (fabs(iopt->t0-time2gst(imu->time,NULL))>DTTOL) return 0;
+    ins->stat=INSS_INIT;
+
+    /* initial carvig-sever */
+    initinsrt(svr);
+
+    rpy[0]=iopt->att0[0]*D2R;
+    rpy[1]=iopt->att0[1]*D2R;
+    rpy[2]=iopt->att0[2]*D2R;
+
+    rn0[0]=iopt->rn0[0]*D2R;
+    rn0[1]=iopt->rn0[1]*D2R;
+    rn0[2]=iopt->rn0[2];
+
+    rpy2dcm(rpy,Cnb);
+    ned2xyz(rn0,Cne);
+    matmul("NT",3,3,3,1.0,Cne,Cnb,0.0,ins->Cbe);
+    pos2ecef(rn0,ins->re);
+    matmul("NN",3,1,3,1.0,Cne,iopt->vn0,0.0,ins->ve);
+
+    /* update ins state in n-frame */
+    update_ins_state_n(ins);
+
+    ins->time=imu->time;
+    trace(3,"initial ins state ok\n");
+    return 1;
+}
+

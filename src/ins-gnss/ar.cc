@@ -4,7 +4,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/07/17 21:48:06 $
 * history : 2012/02/03 1.0  new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants/macros ----------------------------------------------------------*/
 #define FIX_THRES       0.129       /* fix threshold (cycle): p0=0.9999 */

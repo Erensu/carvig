@@ -14,7 +14,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/03/02 1.0 new
 *----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 #define MAXDT      60.0               /* max interval to update imu (s) */
 #define INSUPDPRE  1                  /* inertial navigation equations precision */

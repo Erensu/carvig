@@ -23,8 +23,8 @@
 *           2016/07/31  1.10 add out-outsingle,out-maxsolstd
 *           2017/06/14  1.11 add out-outvel
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
 #include <include/carvig.h>
+#include "carvig.h"
 
 /* system options buffer -----------------------------------------------------*/
 static prcopt_t prcopt_;
@@ -257,10 +257,23 @@ EXPORT opt_t insopts[]={
     {"ins-nhz",         1, (void *)&prcopt_.insopt.nhz,      "" },
     {"ins-lcopt",       0, (void *)&prcopt_.insopt.lcopt,    "" },
     {"ins-pose-aid",    0, (void *)&prcopt_.insopt.pose_aid, "" },
+
     {"ins-align-dualant",0,(void *)&prcopt_.insopt.align_dualants,""},
+    {"ins-align-given"  ,0,(void *)&prcopt_.insopt.align_given,   ""},
     {"ins-mis-v2b-euler1",1,(void *)&prcopt_.insopt.mis_euler[0], ""},
     {"ins-mis-v2b-euler2",1,(void *)&prcopt_.insopt.mis_euler[1], ""},
     {"ins-mis-v2b-euler3",1,(void *)&prcopt_.insopt.mis_euler[2], ""},
+
+    {"ins-align-given-att1",1,(void *)&prcopt_.insopt.att0[0],""},
+    {"ins-align-given-att2",1,(void *)&prcopt_.insopt.att0[1],""},
+    {"ins-align-given-att3",1,(void *)&prcopt_.insopt.att0[2],""},
+    {"ins-align-given-vn1",1,(void *)&prcopt_.insopt.vn0[0],  ""},
+    {"ins-align-given-vn2",1,(void *)&prcopt_.insopt.vn0[1],  ""},
+    {"ins-align-given-vn3",1,(void *)&prcopt_.insopt.vn0[2],  ""},
+    {"ins-align-given-rn1",1,(void *)&prcopt_.insopt.rn0[0],  ""},
+    {"ins-align-given-rn2",1,(void *)&prcopt_.insopt.rn0[1],  ""},
+    {"ins-align-given-rn3",1,(void *)&prcopt_.insopt.rn0[2],  ""},
+    {"ins-align-given-t0" ,1,(void *)&prcopt_.insopt.t0    ,  ""},
 
     {"ins-uncatt",      1, (void *)&prcopt_.insopt.unc.att,  "" },
     {"ins-uncvel",      1, (void *)&prcopt_.insopt.unc.vel,  "" },

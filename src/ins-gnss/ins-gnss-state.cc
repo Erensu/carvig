@@ -13,7 +13,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/02/06 1.0 new
 *----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* get number of position states---------------------------------------------*/
 extern int xnP(const insopt_t *opt) {return 3;}

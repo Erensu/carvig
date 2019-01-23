@@ -15,7 +15,7 @@
 *           2014/05/26 1.4  support galileo and beidou
 *           2015/03/19 1.5  fix bug on ionosphere correction for GLO and BDS
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants -----------------------------------------------------------------*/
 #define MAXITR      10          /* max number of iteration for point pos */

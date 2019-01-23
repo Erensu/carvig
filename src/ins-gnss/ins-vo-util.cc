@@ -69,6 +69,33 @@ extern int iscolinear(const double *p1,const double *p2,const double *p3,
         return norm(t,3)<COLINEAR_EPS;
     }
 }
+/* rotation parameters and translation parameters convert to transformation---
+ * arg   : double *R  I  rotation matrix
+ *         double *t  I  translation matrix
+ *         double *T  O  transformation matrix
+ * return: none
+ * --------------------------------------------------------------------------*/
+extern void rt2tf(const double *R,const double *t,double *T)
+{
+    setzero(T,4,4);
+    T[0]=R[0]; T[4]=R[3]; T[ 8]=R[6]; T[12]=t[0];
+    T[1]=R[1]; T[5]=R[4]; T[ 9]=R[7]; T[13]=t[1];
+    T[2]=R[2]; T[6]=R[5]; T[10]=R[8]; T[14]=t[2]; T[15]=1.0;
+}
+/* transform matrix convert to rotation and translation parameters-----------*/
+extern void tf2rt(const double *T,double *R,double *t)
+{
+    if (R) {
+        seteye(R,3);
+        R[0]=T[0]; R[3]=T[4]; R[6]=T[8 ];
+        R[1]=T[1]; R[4]=T[5]; R[7]=T[9 ];
+        R[2]=T[2]; R[5]=T[6]; R[8]=T[10];
+    }
+    if (t) {
+        setzero(t,1,3);
+        t[0]=T[12]; t[1]=T[13]; t[2]=T[14];
+    }
+}
 
 
 

@@ -6,13 +6,13 @@
 * version : $Revision:$ $Date:$
 * history : 2018/12/15  1.0  new
 *----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants ----------------------------------------------------------------*/
 #define MIN_INT_RESET   30000      /* mininum interval of reset command (ms) */
 #define DTTOLM          0.1        /* threshold of rover and base observation data */
 #define REALTIME        0          /* real time process rover observation data */
-#define MAXTIMEDIFF     0.5        /* max time difference for suspend input stream */
+#define MAXTIMEDIFF     0.1        /* max time difference for suspend input stream */
 #define OUTSOLFRQ       5          /* frequency of output ins solutions */
 #define ONLY_COUPLED_VO 1          /* only coupled with imu and vision measurement data */
 
@@ -50,7 +50,8 @@ static void writesol(rtksvr_t *svr, int index)
 {
     prcopt_t *opt=&svr->rtk.opt;
     static unsigned char buff[MAXSOLMSG+1];
-    static int c=0; int i,n;
+    static int c=0;
+    int i,n;
 
     tracet(4,"writesol: index=%d\n",index);
 
@@ -387,21 +388,69 @@ static void updatepvt(rtksvr_t *svr, const sol_t *sol ,int isol)
     svr->pvt[isol]=*sol;
     return;
 }
+/* delete hash table-----------------------------------------------------------*/
+static void hash_rmimgfeat(feature **ht)
+{
+    struct feature *current,*tmp;
+
+    HASH_ITER(hh,*ht,current,tmp) {
+        HASH_DEL(*ht,current);  /* delete; users advances to next */
+        free(current);          /* optional- if you want to free  */
+    }
+    *ht=NULL; /* delete */
+}
+/* add a feature to a frame---------------------------------------------------*/
+static void hash_addfeat(feature** feats,int uid,double u,double v,gtime_t time)
+{
+    feature *s=NULL;
+    HASH_FIND_INT(*feats,&uid,s);  
+    if (s==NULL) {
+
+        s=(feature*)malloc(sizeof(feature));
+        s->time=time;
+        s->uid=uid;
+        s->valid=1;
+        s->u=u;
+        s->v=v;
+        HASH_ADD_INT(*feats,uid,s);
+    }
+    else {
+        s->time=time;
+        s->uid=uid;
+        s->valid=1;
+        s->u=u;
+        s->v=v;
+    }
+}
 /* update image raw data------------------------------------------------------*/
-static void updateimg(rtksvr_t *svr, const img_t *img ,int iimg)
+static void updateimg(rtksvr_t *svr, img_t *img ,int iimg)
 {
     trace(3,"updateimg:\n");
 
     if (iimg>=MAXIMGBUF) return;
-    if (fabs(timediff(svr->img[iimg-1].time,img->time))<DTTOL
-        &&iimg>=1) return;
-
+    if (fabs(timediff(svr->img[iimg-1].time,img->time))<DTTOL&&iimg>=1) return;
     svr->img[iimg].id  =img->id;
     svr->img[iimg].time=img->time;
     svr->img[iimg].h=img->h;
     svr->img[iimg].w=img->w;
 
     memcpy(svr->img[iimg].data,img->data,sizeof(unsigned char)*img->w*img->h);
+    if (img->feat) {
+        feature *current,*tmp;
+        HASH_ITER(hh,svr->img[iimg].feat,current,tmp) {
+
+            /* delete feature point */
+            HASH_DEL(svr->img[iimg].feat,current);
+            free(current);
+        }
+        svr->img[iimg].feat=NULL;
+        HASH_ITER(hh,img->feat,current,tmp) {
+
+            /* add feature point */
+            hash_addfeat(&svr->img[iimg].feat,current->uid,current->u,current->v,current->time);
+        }
+    }
+    hash_rmimgfeat(&img->feat);
     return;
 }
 /* update pose measurement data-----------------------------------------------*/
@@ -612,7 +661,8 @@ static int inputimg(rtksvr_t *svr,gtime_t t0,img_t **img)
             &&svr->img[j].h&&svr->img[j].w&&svr->img[j].time.time!=0) {
 
             *img=&svr->img[j];
-            svr->syn.img=j; return 1; /* ok */
+            svr->syn.img=j;
+            return 1; /* ok */
         }
     }
     *img=NULL;
@@ -991,17 +1041,17 @@ static void updatetimediff(rtksvr_t *svr)
         if (svr->rtk.opt.insopt.lcopt==IGCOM_USEOBS&&syn->ni) {
             if (syn->nr) {
                 syn->dt[0]=time2gpst(syn->time[2],NULL)-
-                        time2gpst(syn->time[0],NULL);
+                           time2gpst(syn->time[0],NULL);
             }
             if (syn->nb) {
                 syn->dt[1]=time2gpst(syn->time[2],NULL)-
-                        time2gpst(syn->time[1],NULL);
+                           time2gpst(syn->time[1],NULL);
             }
         }
         if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
             if (syn->np&&syn->ni) {
                 syn->dt[2]=time2gpst(syn->time[5],NULL)-
-                        time2gpst(syn->time[2],NULL);
+                           time2gpst(syn->time[2],NULL);
             }
         }
     }
@@ -1016,7 +1066,7 @@ static void updatetimediff(rtksvr_t *svr)
         if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
             if (syn->np&&syn->ni) {
                 syn->dt[2]=time2gpst(syn->time[5],NULL)-
-                        time2gpst(syn->time[2],NULL);
+                           time2gpst(syn->time[2],NULL);
             }
         }
     }
@@ -1031,7 +1081,7 @@ static void updatetimediff(rtksvr_t *svr)
         if (svr->rtk.opt.insopt.pose_aid||svr->rtk.opt.insopt.align_dualants) {
             if (syn->np&&syn->ni) {
                 syn->dt[2]=time2gpst(syn->time[5],NULL)-
-                        time2gpst(syn->time[2],NULL);
+                           time2gpst(syn->time[2],NULL);
             }
         }
     }
@@ -1092,6 +1142,11 @@ static int suspend(rtksvr_t *svr,int index)
     }
     /* ins/gnss-lc/vo tightly coupled position mode */
     if (svr->rtk.opt.mode==PMODE_INS_LGNSS_VO) {
+#if 1
+        switch (index) {
+            case 4: if ((syn->ni&&!syn->ns)||(syn->ni&&!syn->nm)) return 1;
+        }
+#endif
         switch (index) {
             case 4: if (d*syn->dt[0]> dT) return 1;
                     if (d*syn->dt[1]> dT) return 1; break;
@@ -1211,14 +1266,18 @@ static int imuobsalign(rtksvr_t *svr)
 /* time alignment for imu and image measurement data-------------------------*/
 static int imuimgalign(rtksvr_t *svr)
 {
-
     int i,j,k; double sow1,sow2,sow3;
     syn_t *syn=&svr->syn;
 
-    trace(3,"imuimgalign:\n");
+    tracet(3,"imuimgalign:\n");
 
     for (i=0;i<(syn->of[4]?MAXIMGBUF:syn->nm)&&!syn->tali[4];i++) {
+        if (svr->rtk.opt.insopt.align_given==1) {
 
+            syn->tali[4]=2;
+            tracet(3,"imu and solution/image align ok\n");
+            return 1;
+        }
         sow1=time2gpst(svr->img[i].time,NULL);
         for (j=0;j<(syn->of[2]?MAXIMUBUF:syn->ni);j++) {
 
@@ -1400,10 +1459,12 @@ static void *rtksvrthread(void *arg)
         /* averaging single base position */
         if (fobs[1]>0&&svr->rtk.opt.rb[0]==0.0&&
             svr->rtk.opt.refpos==POSOPT_SINGLE) {
-            if ((svr->rtk.opt.maxaveep<=0||svr->nave<svr->rtk.opt.maxaveep)&&
 
-                pntpos(svr->obs[1][0].data,svr->obs[1][0].n,&svr->nav,&svr->rtk.opt,&sol,NULL,NULL,NULL,msg)) {
-                for (i=0;i<6;i++) svr->rtk.opt.rb[i]=sol.rr[i];
+            if ((svr->rtk.opt.maxaveep<=0||svr->nave<svr->rtk.opt.maxaveep)&&pntpos(svr->obs[1][0].data,svr->obs[1][0].n,
+                &svr->nav,&svr->rtk.opt,&sol,NULL,NULL,NULL,msg)) {
+                for (i=0;i<6;i++) {
+                    svr->rtk.opt.rb[i]=sol.rr[i];
+                }
             }
         }
         /* input imu measurement data */
@@ -1457,7 +1518,8 @@ static void *rtksvrthread(void *arg)
                     rtksvrunlock(svr);
                 }
                 else {
-                    j=INSUPD_TIME; /* ins mechanization */
+                    /* ins mechanization */
+                    j=INSUPD_TIME;
                 }
             }
             /* input pvt solution data from pvt buffer */
@@ -1478,6 +1540,9 @@ static void *rtksvrthread(void *arg)
                     if (inputpose(svr,imus.data[i].time,&pose)&&j==INSUPD_MEAS) {
                         flag=insinitdualant(svr,&pose,&psol,&imus.data[i]);
                     }
+                }
+                else if (iopt->align_given) {
+                    flag=insinitgiven(svr,&imus.data[i]);
                 }
                 else {
                     /* initial ins states from solutions */
@@ -1600,8 +1665,8 @@ static void *rtksvrthread(void *arg)
         }
         /* ins-gnss-vo coupled position mode */
         if (opt->mode==PMODE_INS_LGNSS_VO) {
-
             for (i=0;i<imus.n;i++) {
+
                 if (inputpvt(svr,imus.data[i].time,&psol)) {
                     sol2gnss(&psol,&gnss);
                     j=INSUPD_MEAS;
@@ -1617,6 +1682,9 @@ static void *rtksvrthread(void *arg)
                         if (inputpose(svr,imus.data[i].time,&pose)&&j==INSUPD_MEAS) {
                             flag=insinitdualant(svr,&pose,&psol,&imus.data[i]);
                         }
+                    }
+                    else if (iopt->align_given) {
+                        flag=insinitgiven(svr,&imus.data[i]);
                     }
                     else {
                         /* initial ins states from solutions */
@@ -1665,7 +1733,6 @@ static void *rtksvrthread(void *arg)
                 }
                 /* coupled with vo */
                 voigpos(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt));
-                
                 rtksvrunlock(svr);
 
                 /* output results */
@@ -1800,7 +1867,7 @@ extern int carvigsvrinit(rtksvr_t *svr)
 extern void carvigsvrfree(rtksvr_t *svr)
 {
     int i,j;
-    
+
     free(svr->nav.eph ); svr->nav.eph =NULL;
     free(svr->nav.geph); svr->nav.geph=NULL;
     free(svr->nav.seph); svr->nav.seph=NULL;
@@ -1816,6 +1883,7 @@ extern void carvigsvrfree(rtksvr_t *svr)
         freeimg(&svr->raw[i].img);
     }
     rtkfree(&svr->rtk);
+    freeigvfp();
 }
 /* lock/unlock rtk server ------------------------------------------------------
 * lock/unlock rtk server

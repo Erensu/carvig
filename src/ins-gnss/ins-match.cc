@@ -13,6 +13,7 @@
 #include <emmintrin.h>
 #include <pmmintrin.h>
 #include <triangle.h>
+#include <include/carvig.h>
 
 /* constants ----------------------------------------------------------------*/
 #define add_data_func_delc(data_type,add_data_type)            \
@@ -35,7 +36,7 @@
         return 1;                                              \
     }                                                          \
 
-#define TRACR_FEAT_POINTS    1       /* output feature points for debugs */
+#define TRACR_FEAT_POINTS    0       /* output feature points for debugs */
 #define MATCH_RATIO          3.0     /* ratio of min-cost to second-min-cost */
 #define USE_NEW_BUCKET       1       /* use new bucket feature exctract method */
 #define CHK_MATCH_ROI        1       /* check match ROI options */
@@ -961,8 +962,6 @@ extern void free_match_set(match_set_t *mset)
 /* free ranges data-----------------------------------------------------------*/
 static void free_ranges(ranges_t *ranges)
 {
-    trace(3,"free_ranges:\n");
-
     if (ranges->data) {
         free(ranges->data); ranges->data=NULL;
     } 
@@ -980,8 +979,6 @@ static void remove_outliers(match_set_t *mset,const matchopt_t *opt,int *index,
     float p1_flow_u,p1_flow_v,p2_flow_u,p2_flow_v,p3_flow_u,p3_flow_v;
     int p1,p2,p3,i,*num_support;
     match_set_t p_matched_copy={0};
-
-    trace(3,"removeOutliers:\n");
 
     /* do we have enough points for outlier removal? */
     if (mset->n<=3) return;
@@ -1491,8 +1488,8 @@ static void init_match_buf(matchopt_t *opt)
     m1c2  =NULL; n1c2=0;
     I1p   =NULL;
     I1c   =NULL;
-    I1p_du=NULL; I1p_dv=0;
-    I1c_du=NULL; I1c_dv=0;
+    I1p_du=NULL; I1p_dv=NULL;
+    I1c_du=NULL; I1c_dv=NULL;
 
     /* margin needed to compute descriptor + sobel responses */
     margin=8+1;
@@ -1529,9 +1526,6 @@ static void free_match_buf()
 static int getrand(int n,int num,int *sample)
 {
     register int i,j,ns,*list;
-
-    trace(3,"getrandsample:\n");
-
     list=imat(n,1);
 
     /* create vector containing all indices */
@@ -1688,6 +1682,37 @@ static void buketfeatnew(const matchopt_t *opt,const match_set_t *mp_dense,
         free_match_set(buckets);
     }
 }
+/* add a feature to a frame---------------------------------------------------*/
+static void hash_addfeat(feature** feats,int uid,double u,double v,gtime_t time)
+{
+    feature *s=NULL;
+    HASH_FIND_INT(*feats,&uid,s);  /* id already in the hash? */
+    if (s==NULL) {
+
+        s=(feature*)malloc(sizeof(feature));
+        s->time=time;
+        s->uid=uid;
+        s->valid=1;
+        s->u=u;
+        s->v=v;
+        HASH_ADD_INT(*feats,uid,s);  /* id: name of key field */
+    }
+}
+/* copy feature point hash table in one image----------------------------------*/
+static void hashcp(img_t *out,const img_t *in)
+{
+    feature *current,*tmp;
+    HASH_ITER(hh,out->feat,current,tmp) {
+
+        /* delete feature point */
+        HASH_DEL(out->feat,current);
+        free(current);
+    }
+    out->feat=NULL;
+    HASH_ITER(hh,in->feat,current,tmp) {
+        hash_addfeat(&out->feat,current->uid,current->u,current->v,current->time);
+    }
+}
 /* copy image data to match_t struct-------------------------------------------*/
 static void backupimg(const img_t *data,match_t *match)
 {
@@ -1705,6 +1730,9 @@ static void backupimg(const img_t *data,match_t *match)
     match->Ic.h   =data->h;
     match->Ic.id  =data->id;
     match->Ic.time=data->time;
+
+    hashcp(&match->Ip,&match->Ic);
+    hashcp(&match->Ic,data);
 }
 /* initial match struct-------------------------------------------------------
  * args:    match_t *match  IO  match struct
@@ -1730,12 +1758,25 @@ extern void init_match(match_t *match,const matchopt_t *opt)
     }
     match->Ic.w=opt->img_w;
     match->Ic.h=opt->img_h; match->Ic.time=t0;
+    match->Ic.feat=NULL;
 
     match->Ip.w=opt->img_w;
     match->Ip.h=opt->img_h; match->Ip.time=t0;
     match->time=t0;
+    match->Ip.feat=NULL;
 
     init_match_buf(&match->opt);
+}
+/* delete hash table-----------------------------------------------------------*/
+static void hash_rmimgfeat(feature **ht)
+{
+    struct feature *current,*tmp;
+
+    HASH_ITER(hh,*ht,current,tmp) {
+        HASH_DEL(*ht,current);  /* delete; users advances to next */
+        free(current);          /* optional- if you want to free  */
+    }
+    *ht=NULL; /* delete */
 }
 /* free match struct----------------------------------------------------------*/
 extern void free_match(match_t *match)
@@ -1750,6 +1791,31 @@ extern void free_match(match_t *match)
 
     free_match_buf();
     hash_delete(&hash);
+
+    hash_rmimgfeat(&match->Ip.feat);
+    hash_rmimgfeat(&match->Ic.feat);
+}
+/* match feature point--------------------------------------------------------*/
+static int matchimgfeat(match_set_t *pset,const img_t *pimg,const img_t *cimg)
+{
+    struct feature *current,*tmp,*pf=NULL;
+    match_point pt={0};
+
+    if (pimg->feat==NULL||cimg->feat==NULL) return 0;
+
+    pset->n=0;
+    HASH_ITER(hh,cimg->feat,current,tmp) {
+
+        HASH_FIND_INT(pimg->feat,&current->uid,pf);
+        if (pf==NULL) continue;
+        pt.up=(float)pf->u;
+        pt.vp=(float)pf->v;
+        pt.uc=(float)current->u;
+        pt.vc=(float)current->v;
+
+        add_match_set_match_point(pset,&pt);
+    }
+    return pset->n;
 }
 /* match feature points from input image data---------------------------------
  * args:    match_t *m         IO  match struct data
@@ -1762,6 +1828,17 @@ extern int matchfeats(match_t *pmatch,const img_t *img)
 
     trace(3,"match: time=%s\n",time_str(img->time,4));
 
+    if (img->feat) {
+        pmatch->pt  =pmatch->time; 
+        pmatch->time=img->time; 
+
+        backupimg(img,pmatch);
+        matchimgfeat(&pmatch->mp_bucket,&pmatch->Ip,&pmatch->Ic);
+
+        /* numer of feature points */
+        nnum=HASH_COUNT(img->feat);
+        return nnum;
+    }
     index =imat(1,img->h*img->w/2);
     nindex=imat(1,img->h*img->w/2);
 
@@ -1796,7 +1873,7 @@ extern int matchfeats(match_t *pmatch,const img_t *img)
     trace_match_points(&pmatch->mp_bucket);
 #endif
     /* check match ok? */
-    if (pmatch->mp_dense .n<=0||pmatch->mp_bucket.n<=0) {
+    if (pmatch->mp_dense.n<=0||pmatch->mp_bucket.n<=0) {
 
         free(index); free(nindex);
         trace(2,"match feature fail\n");
@@ -1810,12 +1887,15 @@ extern int initimg(img_t *data,int w,int h,gtime_t time)
 {
     trace(3,"initimg:\n");
     if (w<=0||h<=0) return 0;
+
+    if (data->data) free(data->data); data->data=NULL;
     if (!(data->data=(uint8_t*)malloc(sizeof(uint8_t)*w*h))) {
         trace(2,"initial ima fail\n");
         return 0;
     }
     data->time=time; data->w=w; data->h=h;
     data->id=0;
+    data->feat=NULL;
     return 1;
 }
 /* free image struct data----------------------------------------------------*/
@@ -1827,11 +1907,8 @@ extern void freeimg(img_t *data)
         free(data->data); data->data=NULL;
     }
     data->w=data->h=0;
-}
-/* remove tack lost match index-----------------------------------------------*/
-extern void rmmatchindex(const int index)
-{
-    hash_find(&hash,index);
+    hash_rmimgfeat(&data->feat);
+    data->feat=NULL;
 }
 
 

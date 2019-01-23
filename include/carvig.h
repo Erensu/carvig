@@ -55,7 +55,7 @@ extern "C"{
 #endif
 
 #ifdef WIN_DLL
-#define EXPORT __declspec(dllexport) /* for Windows DLL */
+#define EXPORT __declspec(dllexport)    /* for Windows DLL */
 #else
 #define EXPORT
 #endif
@@ -289,6 +289,7 @@ extern "C"{
 #define MAXIMUBUF   1000                /* max number of imu measurement data buffer */
 #define MAXIMGBUF   500                 /* max number of image data buffer */
 #define MAXPOSEBUF  1000                /* max number of pose measurement buffer */
+#define MAXFRAMEBUF 100                 /* max number of image frames buffer */
 #define MAXPOSE     50                  /* max number of input pose measurement data */
 #define MAXIMG      50                  /* max number of input image data */
 #define MAXNRPOS    16                  /* max number of reference positions */
@@ -443,7 +444,7 @@ extern "C"{
 #define SOLQ_DOP     8                  /* solution status: doppler measurement aid */
 #define SOLQ_INHERIT 9                  /* solution status: ambiguity inherit fix status */
 #define SOLQ_ROUND   10                 /* solution status: ambiguity round fix */
-#define SOLQ_VO      11                 /* solution status: visual odometry status */
+#define SOLQ_VO      11                 /* solution status: visual odometry status aid */
 #define SOLQ_GRTH    12                 /* solution status: ground truth status */
 #define SOLQ_WAAS    13                 /* solution status: solution calculated using corrections from an WAAS */
 #define SOLQ_PROP    14                 /* solution status: propagated by a kalman filter without new observations */
@@ -555,6 +556,10 @@ extern "C"{
 #define STRFMT_OEM6_SOL  34             /* stream format: NovAtel OEM6 solution data */
 #define STRFMT_OEM6_POSE 35             /* stream format: NovAtel OEM6 dual ant. pose measurement */
 #define STRFMT_OEM6_RAW  36             /* stream format: NovAtel OEM6 raw observation data */
+#define STRFMT_IGVSIM_FEAT 37           /* stream format: ins-gnss-vo multisensor simulator feature point measurement data */
+#define STRFMT_IGVSIM_IMU  38           /* stream format: ins-gnss-vo multisensor simulator imu measurement data  */
+#define STRFMT_IGVSIM_GNSS 39           /* stream format: ins-gnss-vo multisensor simulator gnss measurement data*/
+#define STRFMT_IGVSIM_FEATALL 40        /* stream format: read all ins-gnss-vo multisensor simulator feature point measurement data */
 
 #define GROUND_TRUTH_KARL  1            /* Karlsruhe dataset ground truth solution format */
 #define GROUND_TRUTH_EUROC 2            /* EuRoC MAV dataset ground truth solution format */
@@ -750,15 +755,18 @@ typedef struct {                /* camera model struct type */
 typedef struct feature {        /* feature data type */
     gtime_t time;               /* feature point extract time */
     double u,v;                 /* pixel u,v coord */
-    int valid;                  /* valid flag of feature/feature track status*/
+    int valid,uid;              /* valid flag and uid of this feature point */
     int descrlen;               /* length of descriptor */
     double descr[DESCR_MAXLEN]; /* descriptor */
+    UT_hash_handle hh;          /* makes this structure hashable */
 } feat_data_t;
 
 typedef struct  {               /* image data type */
     gtime_t time;               /* data time */
     int w,h,id;                 /* width and height of image/frame id of image */
     unsigned char *data;        /* image data buffer */
+    feature *feat;              /* feature point measurement data */
+    UT_hash_handle hh;          /* makes this structure hashable */
 } img_t;
 
 typedef struct trackd {         /* feature points track record */
@@ -783,6 +791,7 @@ typedef struct trackd {         /* feature points track record */
 typedef struct track {          /* store all feature track data type */
     int n,nmax;                 /* number and max number of track data */
     int newtrack[MAXBUFF],updtrack[MAXBUFF],losttrack[MAXBUFF],exceedtrack[MAXBUFF],nnew,nupd,nlost,nexceed;
+    int nless,lesstrack[MAXBUFF];
                                 /* new/updated/lost/exceed-max-track-length feature track index in `.data' */
     trackd_t *data;             /* track data */
 } track_t;
@@ -959,24 +968,24 @@ typedef struct {            /* gnss position/velocity measurement */
 
 typedef struct {               /* camera states type */
     gtime_t time;              /* camera states time */
-    double rc[3],vc[3],Cce[9]; /* camera position/velocity/attitude in e-frame */
+    int status;                /* monocular visual odometry estimate status */
+    double rc[3],Cce[9],rc0[3],Cce0[3];
+                               /* camera position/velocity/attitude in e-frame */
     double Ccb[9],lever[3];    /* dcm and lever arm of camera to imu body frame */
     double dT[16];             /* camera transformation matrix from precious to current */
     double T[16];              /* camera transformation matrix relative to initial pose */
     double phi[3],P[9];        /* covariance of camera pose expressed in tangent space */
 } vostate_t;
 
-typedef struct {            /* ins states type */
-    gtime_t time,ptime;     /* ins states time and precious time of ins states*/
-    gtime_t plct,ptct;      /* precious time of ins-gnss loosely/tightly coupled (0: no coupled)*/
-    double dt;              /* time difference of precious ins updates and current time */
-    double Cbe[9];          /* b-frame to e-frame trans matrix */
-    double re[3];           /* position (e-frame) */
-    double ve[3];           /* velocity (e-frame) */
-    double ae[3];           /* acceleration (e-frame) */
-    double dtr[6];          /* receiver clock bias to time systems (s) */
-    double dtrr;            /* receiver clock‐drift (m/s) */
+typedef struct {             /* ins states type */
+    gtime_t time,ptime;      /* ins states time and precious time of ins states*/
+    gtime_t plct,ptct;       /* precious time of ins-gnss loosely/tightly coupled (0: no coupled)*/
+    double dt;               /* time difference of precious ins updates and current time */
+    double Cbe[9];           /* b-frame to e-frame trans matrix */
+    double re[3],ve[3],ae[3];/* position/velocity/acceleration (e-frame) */
 
+    double dtr[6],dtrr;      /* receiver clock bias to time systems (s) and clock‐drift (m/s) */
+    
     double rn[3],vn[3],an[3];/* position/velocity/acceleration (n-frame) */
     double Cbn[9],dvn[3];    /* transform matrix of b-frame to n-frame/velocity increment at the precious epoch */
 
@@ -1003,11 +1012,14 @@ typedef struct {            /* ins states type */
     double fx,fy,ox,oy,k1,k2,p1,p2;
                             /* camera calibration parameters */
     double Cvb[9],len;      /* misalignment from v-frame to b-frame (defined at dual ant.) and length of dual ant. */
-
     double dopv[3];         /* doppler velocity (ecef, m/s) */
-
-    int nx,nb;              /* numbers of estimated states,fixed states (except phase bias) */
-
+    double pnull[3],vnull[3],Cnull[9];
+                            /* these three variables should have the same physical
+                             * interpretation with `orientation`, `position`, and
+                             * `velocity` in `ecef'. there three variables are used to modify
+                             * the transition matrices to make the observability matrix
+                             * have proper null space.
+                             * */
     double *x,*P;           /* ekf estimated states/covariance matrix */
     double *xa,*Pa;         /* estimated states and covariance for ins-gnss loosely coupled */
     double *xb,*Pb;         /* fixed states and covariance (except phase bias) */
@@ -1019,6 +1031,7 @@ typedef struct {            /* ins states type */
     double age,ratio;       /* age of differential of ins and gnss (s)/ambiguity fix ratio */
     int stat,gstat,pose;    /* ins updates stat,gnss updates status and pose fusion status */
     int ns;                 /* numbers valid satellite for loosely coupled */
+    int nx,nb;              /* numbers of estimated states,fixed states (except phase bias) */
     void *rtkp;             /* pointer rtk struct data */
     vostate_t vo;           /* vosidual odometry states */
 } insstate_t;
@@ -1055,14 +1068,16 @@ typedef struct {            /* initial uncertainty for ins-gnss loosely coupled 
 } unc_t;
 
 typedef struct {            /* imu error model type */
-    double bg[3];           /* gyro constant bias (deg/h) */
-    double ba[3];           /* accl constant bias (ug) */
+    double bg[3];           /* gyro constant bias (rad/sec) */
+    double ba[3];           /* accl constant bias (m/s^2) */
     double Ma[9],Mg[9];     /* non-orthogonal between sensor axes (ppm) */
     double Gg[9];           /* g-dependent bias for a gyro triad */
     double sR0G,TauG;       /* gyro correlated bias (TauG: time for Markov process (s),sROG: deg/h */
     double sROA,TauA;       /* accl correlated bias (TauA: time for Markov process (s),sROA: ug */
-    double wbg[3];          /* angular random walk (deg/sqrt(h)) */
-    double wba[3];          /* velocity random walk (ug/sqrt(Hz)) */
+    double wgn[3];          /* angular random walk (rad s^-0.5) */
+    double wan[3];          /* velocity random walk (m s^-1.5) */
+    double wbg[3];          /* gyro bias random walk PSD (rad^2 s^-3) */
+    double wba[3];          /* accelerometer bias random walk PSD (m^2 s^-5) */
 } imu_err_t;
 
 typedef struct {            /* ins navigation initial fine alignments type */
@@ -1167,9 +1182,8 @@ typedef struct {            /* ins options type */
 
     int align_vn;           /* ins initial align uses kalman filter with vn as measurement in static-alignment mode */
     int align_fn;           /* ins initial align uses kalman filter with fn as measurement in static-alignment mode */
-    int align_corse;        /* ins initial coarse alignment in static-alignment mode  */
-    int alimethod;          /* ins initial align method (INSALIGN_???) */
     int align_dualants;     /* ins initial use dual antennas pose measurement data */
+    int align_given;        /* ins initial use given attitude/velocity/position */
 
     int imuformat;          /* imu measurement data format (IMUFORMAT_???) */
     int imudecfmt;          /* imu measurement decode format (IMUDECFMT_???) */
@@ -1202,7 +1216,10 @@ typedef struct {            /* ins options type */
     double len;             /* length of dual antennas (m) */
     double hz;              /* imu measurement sampling frequency */
     double nhz;             /* non-holonomic constraint update frequency */
-
+    double rn0[3],vn0[3],att0[3],t0;
+                            /* ins initial position/velocity/attitude in n-frame {deg, m/s, rad}
+                             * and week seconds from user giving
+                             * */
     psd_t psd;              /* PSD for ins-gnss loosely coupled ekf states */
     unc_t unc;              /* initial uncertainty for ins-gnss loosely coupled */
     imu_err_t imuerr;       /* imu error model */
@@ -2396,6 +2413,7 @@ EXPORT int mateigenvalue(const double* A,int n,double *u,double *v);
 EXPORT int matdet(const double*A,int n,double*det);
 EXPORT double det(const double *A,int n);
 EXPORT double stds(const double *val,int n);
+EXPORT double avg(const double *val,int n);
 EXPORT double norm_distri(const double u);
 EXPORT double re_norm(double p);
 EXPORT void add_fatal(fatalfunc_t *func);
@@ -2618,11 +2636,15 @@ EXPORT int init_rt17  (raw_t *raw);
 EXPORT int init_cmr   (raw_t *raw);
 EXPORT void free_rt17 (raw_t *raw);
 EXPORT void free_cmr  (raw_t *raw);
+EXPORT void freeigvfp();
 EXPORT int update_cmr (raw_t *raw, rtksvr_t *svr, obs_t *obs);
 
 EXPORT int input_oem6_sol (raw_t *raw, unsigned char data);
 EXPORT int input_oem6_pose(raw_t *raw, unsigned char data);
 EXPORT int input_oem6_raw (raw_t *raw, unsigned char data);
+EXPORT int input_igvsim_imu(raw_t *raw,unsigned char data);
+EXPORT int input_igvsim_gnss(raw_t *raw, unsigned char data);
+EXPORT int input_igvsim_feat(raw_t *raw, unsigned char data);
 
 EXPORT int input_oem4  (raw_t *raw, unsigned char data);
 EXPORT int input_oem3  (raw_t *raw, unsigned char data);
@@ -2647,6 +2669,7 @@ EXPORT int input_rinex (raw_t *raw, unsigned char data);
 EXPORT int input_m39_mix(raw_t *raw, unsigned char data);
 EXPORT int input_sbp(raw_t *raw, uint8_t data);
 EXPORT int input_cnav(raw_t *raw, unsigned char data);
+EXPORT int input_igvsim_featall(raw_t *raw, unsigned char data);
 
 EXPORT int input_oem6f_sol (raw_t *raw, FILE *fp);
 EXPORT int input_oem6f_pose(raw_t *raw, FILE *fp);
@@ -2674,6 +2697,8 @@ EXPORT int input_m39_mixf(raw_t *raw,FILE *fp);
 EXPORT int input_sbpjsonf(raw_t *raw, FILE *fp);
 EXPORT int input_sbpf(raw_t *raw, FILE *fp);
 EXPORT int input_cnavf(raw_t *raw, FILE *fp);
+EXPORT int input_igvsim_featf(raw_t  *raw,FILE *fp);
+
 EXPORT int gen_ubx (const char *msg, unsigned char *buff);
 EXPORT int gen_stq (const char *msg, unsigned char *buff);
 EXPORT int gen_nvs (const char *msg, unsigned char *buff);
@@ -2901,6 +2926,18 @@ EXPORT int updateinsn(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
 EXPORT int updateinsb(const insopt_t *insopt,insstate_t *ins,const imud_t *data);
 EXPORT void correctatt(const double *dphi,const double *C,double *Cc);
 
+EXPORT int kinematicsecef(const double dt,const double *Cbe1,const double *Cbe0,
+                          const double *ve1,const double *ve0,
+                          const double *re1,
+                          double *fb,double *omgb);
+EXPORT int simimumeas(double *fb,double *omgb,const imu_err_t *err,double dt);
+EXPORT int generatepath(const char *file,const cam_t *cam,const imu_err_t *err,
+                        const insopt_t *opt,
+                        const char *imufile,
+                        const char *gpsfile,const char *vofile);
+EXPORT int sim_imu_static(const double *rpy,const double *pos,const double ts,
+                          const double T,const imu_err_t *err,imu_t *data);
+
 EXPORT void traceins(int level, const insstate_t *ins);
 EXPORT void ned2xyz(const double *pos,double *Cne);
 EXPORT void rpy2dcm(const double *rpy,double *Cnb);
@@ -3006,6 +3043,7 @@ EXPORT void update_ins_state_n(insstate_t *ins);
 EXPORT void update_ins_state_e(insstate_t *ins);
 EXPORT int insinitdualant(rtksvr_t *svr,const pose_meas_t *pose,const sol_t *sol,
                           const imud_t *imu);
+EXPORT int insinitgiven(rtksvr_t *svr,const imud_t *imu);
 EXPORT int calibdualant(const insopt_t *opt,const solbuf_t *solbuf,
                         posebuf_t *posebuf,gtime_t ts,gtime_t te,
                         double *Cvb,double *ave,double *std);
@@ -3196,7 +3234,6 @@ EXPORT int matchfeats(match_t *pmatch,const img_t *img);
 EXPORT void init_match(match_t *match,const matchopt_t *opt);
 EXPORT void free_match(match_t *match);
 EXPORT void free_match_set(match_set_t *mset);
-EXPORT void rmmatchindex(const int index);
 
 /* visual odometry estimator--------------------------------------------------*/
 EXPORT int estmonort(const voopt_t *opt,const match_set_t *feat,double *Tr);
@@ -3271,8 +3308,12 @@ EXPORT int undistortradtan(const cam_t *cam,const double *in,double *out,
 /* vo aid to ins/gnss coupled functions---------------------------------------*/
 EXPORT int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
                    const img_t *img,int flag);
+EXPORT int voigposlc(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
+                     const img_t *img,int flag);
 EXPORT void initvoaid(insopt_t *opt);
+EXPORT void initvoaidlc(insopt_t *opt);
 EXPORT void freevoaid();
+EXPORT void freevoaidlc();
 EXPORT int kalibrrosbag(const char *datfile,const char *imufile,
                         const char *imgdir,
                         const char *output);
@@ -3285,8 +3326,6 @@ EXPORT void tf2rt(const double *T,double *R,double *t);
 
 EXPORT int predictfeat(const double *R,const double *t,const double *K,
                        const double *uv,double *uvp);
-EXPORT int getcamerapose(gtime_t time,double *R,double *t);
-EXPORT int getfeaturepos(trackd_t *feat,gtime_t time,double *pf);
 EXPORT int inroi(const float u,const float v,const matchopt_t *opt);
 EXPORT int fastfeats(const unsigned char *img,int img_w,int img_h,short barrier,
                      const matchopt_t *opt,int *uv,int *num);

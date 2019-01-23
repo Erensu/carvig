@@ -4,9 +4,9 @@
  * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
  * history : 2018/12/11 1.0 new
 -----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
-#define EPS  1E-6
+#define EPS  1E-10
 
 /* null-space of matrix------------------------------------------------------
  * args:    double *A  I  input matrix (mxn)

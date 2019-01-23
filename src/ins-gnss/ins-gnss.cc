@@ -13,7 +13,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2017/10/02 1.0 new
 *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* constants/macros ----------------------------------------------------------*/
 #define MAXDT       3600.0                 /* max time difference for ins-gnss coupled */
@@ -78,6 +78,7 @@
 #define CHKNUMERIC      1                  /* check numeric for given value */
 #define NOINTERP        0                  /* no interpolate ins position/velocity when gnss measurement if need */
 #define COR_IN_ROV      0                  /* correction attitude in rotation vector,otherwise in euler angles */
+#define UPD_INS_E       0                  /* updates ins states in e-frame */
 
 /* global states index -------------------------------------------------------*/
 static int IA=0,NA=0;                      /* index and number of attitude states */
@@ -304,7 +305,8 @@ extern void initlc(insopt_t *opt,insstate_t *ins)
         ins->k2=opt->voopt.cam.k2;
         ins->p1=opt->voopt.cam.p1;
         ins->p2=opt->voopt.cam.p2;
-        initvoaid(opt);
+        initvoaid  (opt);
+        initvoaidlc(opt);
     }
 }
 /* free ins-gnss coupled ekf estimated states and it covariance--------------
@@ -324,7 +326,9 @@ extern void freelc(insstate_t *ins)
 
     ins->nx=ins->nb=0;
     ins->gmeas.n=ins->gmeas.nmax=0;
-    resetindex(); freevoaid();
+    resetindex();
+    freevoaid  ();
+    freevoaidlc();
 }
 /* propagate matrix for stochastic parameters--------------------------------*/
 static void stochasticPhi(int opt,int ix,int nix,int nx,double dt,double *phi)
@@ -456,7 +460,7 @@ static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
     /* velocity transmit matrix */
     matmul3("NN",Cbe,fib,omega);
     skewsym3(omega,T); ecef2pos(pos,rn);
-    pregrav(pos, ge); re=georadi(rn);
+    pregrav(pos,ge); re=georadi(rn);
     matmul("NN",3,3,3,1.0,Omge,Omge,0.0,W2);
 
     W[0 ]=fib[1]; W[3] =fib[2];
@@ -847,6 +851,7 @@ static void updinss(insstate_t *ins,const double *re,const double *ve,
     matcpy(ins->omgb,omgb,1,3);
     matcpy(ins->Cbe,Cbe,1,9);
 #if 1
+    /* normalization dcm */
     normdcm(ins->Cbe);
 #endif
     matcpy(ins->Ma,Mac,1,9);
@@ -1445,7 +1450,7 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
     /* ins mechanization update */
     ins->stat=INSS_NONE;
     if ((opt->soltype==0||opt->soltype==3)?
-#if 1
+#if UPD_INS_E
         /* update ins states based on llh position mechanization */
         !updateinsn(opt,ins,data):
 #else
@@ -1495,8 +1500,7 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
 #endif
         /* determine estimated and covariance matrix */
         if (opt->updint==UPDINT_GNSS) {
-            updstat(opt,ins,timediff(gnss->t,ins->plct),ins->xa,ins->Pa,
-                    phi,P,x,Q);
+            updstat(opt,ins,timediff(gnss->t,ins->plct),ins->xa,ins->Pa,phi,P,x,Q);
         }
         /* ins-gnss loosely coupled */
         if ((stat=lcfilt(opt,ins,meas,std,pcov,timediff(gnss->t,ins->time),
@@ -1508,19 +1512,20 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
                 matcpy(ins->Pa,P,nx,nx);
             }
             else {
-                /* update ins states cov. */
-                matcpy(ins->x,x,nx,1); matcpy(ins->P,P,nx,nx);
+                /* update ins states covariance */
+                matcpy(ins->x,x,nx,1);
+                matcpy(ins->P,P,nx,nx);
             }
             ins->stat=INSS_LCUD;
         }
-        /* update lc's time */
         ins->plct=ins->time;
-
-        /* recheck attitude */
         if (stat) {
             savegmeas(ins,NULL,gnss);
-            rechkatt(ins,data);
+            rechkatt(ins,data); /* recheck attitude */
         }
+    }
+    else {
+        trace(2,"no gnss measurement data\n");
     }
     free(x); free(P); free(phi);
     free(Q);
@@ -1625,9 +1630,7 @@ extern int ant2inins(gtime_t time,const double *rr,const double *vr,
     /* find closest imu measurement index */
     if (imu) {
         for (i=0;i<imu->n;i++)  {
-            if (fabs(timediff(time,imu->data[i].time))<DTTOL) {
-                break;
-            }
+            if (fabs(timediff(time,imu->data[i].time))<DTTOL) break;
         }
         if (i>=imu->n) {
             trace(2,"no common time of imu and observation\n");
@@ -1641,7 +1644,8 @@ extern int ant2inins(gtime_t time,const double *rr,const double *vr,
         if (iimu) *iimu=i;
     }
     /* initial ins position */
-    gapv2ipv(rr,vr,ins->Cbe,opt->lever,&imus,
+    gapv2ipv(rr,vr,ins->Cbe,opt->lever,
+             &imus,
              ins->re,ins->ve);
     return 1;
 }

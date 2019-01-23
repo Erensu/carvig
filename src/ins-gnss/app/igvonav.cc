@@ -161,7 +161,7 @@ static const char *pathopts[]={         /* path options help */
 #define FLGOPT  "0:off,1:std+2:age/ratio/ns"
 #define ISTOPT  "0:off,1:serial,2:file,3:tcpsvr,4:tcpcli,7:ntripcli,8:ftp,9:http"
 #define OSTOPT  "0:off,1:serial,2:file,3:tcpsvr,4:tcpcli,6:ntripsvr,11:ntripc_c"
-#define FMTOPT  "0:rtcm2,1:rtcm3,2:oem4,3:oem3,4:ubx,5:ss2,6:hemis,7:skytraq,8:gw10,9:javad,10:nvs,11:binex,12:rt17,13:sbf,14:cmr,15:tersus,18:sp3,19:rnxclk,20:sbas,21:nmea,22:gsof,23:ublox-evk-m8u,24:ublox-sol,25:m39,26:rinex,27:m39-mix,28:euroc-imu,29:euroc-img,30:karl-img,31:malaga-gnss,32:malaga-imu,33:malaga-img,34:oem6-sol,35:oem6-pose,36:oem6-raw"
+#define FMTOPT  "0:rtcm2,1:rtcm3,2:oem4,3:oem3,4:ubx,5:ss2,6:hemis,7:skytraq,8:gw10,9:javad,10:nvs,11:binex,12:rt17,13:sbf,14:cmr,15:tersus,18:sp3,19:rnxclk,20:sbas,21:nmea,22:gsof,23:ublox-evk-m8u,24:ublox-sol,25:m39,26:rinex,27:m39-mix,28:euroc-imu,29:euroc-img,30:karl-img,31:malaga-gnss,32:malaga-imu,33:malaga-img,34:oem6-sol,35:oem6-pose,36:oem6-raw,37:igv-sim-feat,38:igv-sim-imu,39:igv-sim-gnss,40:igv-sim-featall"
 #define NMEOPT  "0:off,1:latlon,2:single"
 #define SOLOPT  "0:llh,1:xyz,2:enu,3:nmea,4:stat,5:gsif,6:ins"
 #define MSGOPT  "0:all,1:rover,2:base,3:corr"

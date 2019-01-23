@@ -4,7 +4,7 @@
 * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
 * history : 2018/05/10 1.0 new
 *----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /* struct type---------------------------------------------------------------*/
 typedef struct {                /* distance data type for 3-D points */
@@ -82,7 +82,8 @@ static void fundamental(const frame_t *frame,const int *active,int n,double *F)
     svd(A,n,9,U,W,V);
 
     /* extract fundamental matrix from the column of
-     * V corresponding to the smallest singular value */
+     * V corresponding to the smallest singular value
+     * */
     F_[0]=V[0+8*9]; F_[3]=V[1+8*9]; F_[6]=V[2+8*9];
     F_[1]=V[3+8*9]; F_[4]=V[4+8*9]; F_[7]=V[5+8*9];
     F_[2]=V[6+8*9]; F_[5]=V[7+8*9]; F_[8]=V[8+8*9];
@@ -106,8 +107,8 @@ static void getK(const voopt_t *opt,double *K)
     K[6]=opt->calib.cu; K[7]=opt->calib.cv; K[8]=1.0;
 }
 /* compute essential matrix -------------------------------------------------*/
-static void essential(const double *Tc,const double *Tp,const double *F,
-                      const double *K,double *E)
+static void essential(const double *Tc,const double *Tp,const double *F,const double *K,
+                      double *E)
 {
     double *E1,*E2,*U,*V,*W,*D;
 
@@ -145,7 +146,8 @@ static int triangulate(const frame_t *frame,const double *K,const double *R,
     register int i,j,n;
     double *P1,*P2,*P3,*U,*W,*V,*J,*AX1,*BX1;
 
-    n=frame->n; /* number of matched feature points */
+    /* number of matched feature points */
+    n=frame->n;
 
     P1=zeros(3,4);
     P2=zeros(3,4); P3=zeros(3,4);
@@ -192,8 +194,8 @@ extern void matcop(const double *A,int m,int n,const double s,double *B)
     int i,j; for (i=0;i<m;i++) for (j=0;j<n;j++) B[i+j*m]=s*A[i+j*m];
 }
 /* get R|t------------------------------------------------------------------*/
-static void getRt(const double *Ra,const double *Rb,const double *t,
-                  int i,double *Ro,double *to)
+static void getRt(const double *Ra,const double *Rb,const double *t,int i,
+                  double *Ro,double *to)
 {
     if (i==0) {matcpy(Ro,Ra,3,3); matcpy(to,t,1,3);}
     if (i==1) {matcpy(Ro,Ra,3,3); matcop(t,1,3,-1.0,to);}
@@ -210,9 +212,9 @@ static int e2rt(const frame_t *frame,const double *E,const double *K,double *X,
 
     n=frame->n;
 
+    Xc=mat(4,n); Ro=mat(3,3); to=mat(1,3);
     U=mat(3,3); S=mat(1,3); V=mat(3,3);
     T=mat(3,3); Ra=mat(3,3); Rb=mat(3,3);
-    Xc=mat(4,n); Ro=mat(3,3); to=mat(1,3);
 
     /* extract T,R1,R2 (8 solutions) */
     svd(E,3,3,U,S,V);
@@ -225,9 +227,7 @@ static int e2rt(const frame_t *frame,const double *E,const double *K,double *X,
     t[0]=T[5]; t[1]=T[6]; t[2]=T[1];
 
     /* assure determinant to be positive */
-    if (det(Ra,3)<0) {
-        for (i=0;i<9;i++) Ra[i]=-Ra[i];
-    }
+    if (det(Ra,3)<0) for (i=0;i<9;i++) Ra[i]=-Ra[i];
     if (det(Rb,3)<0) {
         for (i=0;i<9;i++) Rb[i]=-Rb[i];
     }
@@ -244,7 +244,9 @@ static int e2rt(const frame_t *frame,const double *E,const double *K,double *X,
     free(Ro); free(to);
     free(S ); free(V );
     free(T ); free(Xc);
-    return max; /* return number of inliers */
+
+    /* return number of inliers */
+    return max;
 }
 /* compare distance ---------------------------------------------------------*/
 static int cmpdist(const void *p1, const void *p2)
@@ -345,11 +347,12 @@ static int getrandsample(int n,int num,int *sample)
 static int addfeature(frame_t *frame,const fea_t *p)
 {
     fea_t *fea_data;
-
     if (frame->nmax<=frame->n) {
-        if (frame->nmax<=0) frame->nmax=64; else frame->nmax*=2;
-        if (!(fea_data=(fea_t *)realloc(frame->data,
-                                        sizeof(fea_t)*frame->nmax))) {
+
+        if (frame->nmax<=0) frame->nmax=64;
+        else frame->nmax+=256;
+
+        if (!(fea_data=(fea_t *)realloc(frame->data,sizeof(fea_t)*frame->nmax))) {
             trace(1,"addfeature: add feature fail\n");
             free(frame->data);
             frame->data=NULL; frame->n=frame->nmax=0;
@@ -363,7 +366,8 @@ static int addfeature(frame_t *frame,const fea_t *p)
 /* free frame struct---------------------------------------------------------*/
 static void freeframe(frame_t *frame)
 {
-    if (frame->data) free(frame->data); frame->n=frame->nmax=0;
+    if (frame->data) free(frame->data);
+    frame->n=frame->nmax=0;
 }
 /* normalize feature points--------------------------------------------------
  * args   :  frame_t *frame  I  input image feature points
@@ -471,7 +475,8 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr)
 
         /* update model if we are better */
         if (m>ni) {
-            ni=m; imatcpy(in,inl,1,m);
+            ni=m;
+            imatcpy(in,inl,1,m);
         }
     }
     if (ni<10) {
@@ -488,7 +493,6 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr)
     /* re-enforce rank 2 constraint */
     svd(E,3,3,U,W,V); W[2]=0.0;
     dialog(W,3,D);
-
     matmul33("NNT",U,D,V,3,3,3,3,E);
 
     /* compute 3d points X and R|t up to scale */
@@ -507,7 +511,7 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr)
     }
     smallerthanmedian(X,j,&mid,NULL);
     if (mid>opt->motion_thres) {
-        trace(2,"little motion\n");
+        trace(2,"fail due to little motion\n");
         goto exit;
     }
     /* compute rotation angles */
@@ -558,6 +562,7 @@ extern int estmonort(const voopt_t *opt,const match_set_t *mf,double *Tr)
 
     trace(3,"estmonort:\n");
 
+    /* do for each match feature point */
     for (i=0;i<mf->n;i++) {
         f.u1c=mf->data[i].uc; f.v1c=mf->data[i].vc;
         f.u1p=mf->data[i].up; f.v1p=mf->data[i].vp;
@@ -566,9 +571,13 @@ extern int estmonort(const voopt_t *opt,const match_set_t *mf,double *Tr)
         if (!addfeature(&frame,&f)) continue;
     }
     if (!(flag=estmono(opt,&frame,tr))) {
-        seteye(Tr,4);
+        trace(3,"mono visual odometry motion estimate fail\n");
+        freeframe(&frame);
+        return 0;
     }
     tfvec2mat(tr,Tr);
+    trace(3,"Tr=\n"); tracemat(3,Tr,4,4,12,6);
+
     freeframe(&frame);
     return flag;
 }

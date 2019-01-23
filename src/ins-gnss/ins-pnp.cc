@@ -9,7 +9,7 @@
  * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
  * history : 2018/11/27 1.0 new
  *-----------------------------------------------------------------------------*/
-#include <carvig.h>
+#include "carvig.h"
 
 /*-----------------------------------------------------------------------------*/
 static int solve_deg2(double a, double b, double c, double &x1, double &x2)
