@@ -54,3 +54,6 @@ target_link_libraries(carvignav carvig pthread
 # add test
 add_subdirectory(test)
 
+# add relative pose estimate library
+add_subdirectory(src/relative-pose)
+

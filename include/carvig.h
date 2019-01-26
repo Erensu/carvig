@@ -969,6 +969,7 @@ typedef struct {            /* gnss position/velocity measurement */
 typedef struct {               /* camera states type */
     gtime_t time;              /* camera states time */
     int status;                /* monocular visual odometry estimate status */
+    double ratio;              /* ratio of inliers */
     double rc[3],Cce[9],rc0[3],Cce0[3];
                                /* camera position/velocity/attitude in e-frame */
     double Ccb[9],lever[3];    /* dcm and lever arm of camera to imu body frame */
@@ -2939,6 +2940,8 @@ EXPORT int sim_imu_static(const double *rpy,const double *pos,const double ts,
                           const double T,const imu_err_t *err,imu_t *data);
 
 EXPORT void traceins(int level, const insstate_t *ins);
+EXPORT void traceinss(int level, const double *Cbe,const double *re,
+                      const double *ve,gtime_t time);
 EXPORT void ned2xyz(const double *pos,double *Cne);
 EXPORT void rpy2dcm(const double *rpy,double *Cnb);
 EXPORT void dcm2rpy(const double *Cnb,double *rpy);
@@ -3236,7 +3239,7 @@ EXPORT void free_match(match_t *match);
 EXPORT void free_match_set(match_set_t *mset);
 
 /* visual odometry estimator--------------------------------------------------*/
-EXPORT int estmonort(const voopt_t *opt,const match_set_t *feat,double *Tr);
+EXPORT int estmonort(const voopt_t *opt,const match_set_t *feat,double *Tr,double *ratio);
 
 /* pgm file read/write--------------------------------------------------------*/
 EXPORT void ppmWriteFileRGB(char *fname, unsigned char *redimg,

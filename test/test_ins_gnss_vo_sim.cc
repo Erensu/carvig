@@ -110,9 +110,9 @@ int main(int argc, char **argv)
     err.ba[1]=-13000*9.80665E-5;
     err.ba[2]=8000*9.80665E-5;
 
-    err.bg[0]=-900.0*D2R/3600;
-    err.bg[1]=1300*D2R/3600;
-    err.bg[2]=-800*D2R/3600;
+    err.bg[0]=-9000.0*D2R/3600;
+    err.bg[1]=13000*D2R/3600;
+    err.bg[2]=-8000*D2R/3600;
 
     err.wgn[0]=0.01*D2R/60.0;
     err.wgn[1]=0.01*D2R/60.0;

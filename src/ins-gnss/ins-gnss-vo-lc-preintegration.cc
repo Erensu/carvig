@@ -47,7 +47,7 @@
 #define MAXRES_POS              30.00         /* max residual for position filter (m) */
 #define VARPOSE                 1.0*D2R       /* variance of pose measurement (rad) */
 #define VARPOS                  0.1           /* variance of position measurement (m) */
-#define THRES_RATIO             0.6           /* threhold of ratio inliers to update camera motion */
+#define SWAP(type,x,y)          {type tmp; tmp=x; x=y; y=tmp;}
 
 typedef struct {                              /* store ins states in precious epoch */
     gtime_t time;                             /* time of ins states */
@@ -59,8 +59,10 @@ typedef struct {                              /* store ins states in precious ep
 typedef struct {                              /* filter workspace */
     double Cbe[2][9],re[2][3],ve[2][3];       /* ins states in precious and current epoch */
     double Cce[2][9],rc[2][3];                /* camera states in precious and current epoch */
+    double *Px;                               /* error states covariance matrix */
     double scale;                             /* mono visual odometry scale */
     inss_t *insdata;                          /* ins states data */
+    int nx;                                   /* number of error states */
     int n;                                    /* number of image frames */
     int ni,nimax;                             /* number of ins states in precious */
     int flag;                                 /* flag of filter */
@@ -71,7 +73,7 @@ static track_t  tracks={0};                   /* all tracking feature points dat
 static match_t  matchs={0};                   /* match feature points data */
 static filt_t   filts ={0};                   /* vo aid filter workspace */
 
-/* so3 jacobian matrix--------------------------------------------------------*/
+/* SO3 jacobian matrix--------------------------------------------------------*/
 static void so3jac(const double *phi,double *Jri)
 {
     double I[9]={1,0,0,0,1,0,0,0,1},W[9],W2[9];
@@ -84,6 +86,30 @@ static void so3jac(const double *phi,double *Jri)
 
     for (i=0;i<9;i++) {
         Jri[i]=I[i]+0.5*W[i]+(1.0/SQR(n)+(1.0+cos(n))/(2.0*n*sin(n)))*W2[i];
+    }
+}
+/* trace ins states ----------------------------------------------------------*/
+extern void traceinss(int level, const double *Cbe,const double *re,
+                      const double *ve,gtime_t time)
+{
+    double pos[3],Cne[9],Cnb[9],rpy[3],vel[3];
+    char s[64];
+    time2str(time,s,3);
+    trace(level,"time  =%s\n",s);
+    ecef2pos(re,pos);
+    ned2xyz(pos,Cne);
+    matmul3("TN",Cbe,Cne,Cnb);
+    dcm2rpy(Cnb,rpy);
+    trace(level,"attn =%8.5f %8.5f %8.5f\n",rpy[0]*R2D,rpy[1]*R2D,rpy[2]*R2D);
+
+    if (ve) {
+        matmul3v("T",Cne,ve,vel);
+        trace(level,"veln =%8.5f %8.5f %8.5f\n",
+              vel[0],vel[1],vel[2]); /* n-frame */
+
+        matmul3v("T",Cbe,ve,vel);
+        trace(level,"velb =%8.5f %8.5f %8.5f\n",
+              vel[0],vel[1],vel[2]); /* b-frame */
     }
 }
 /* add ins states-------------------------------------------------------------*/
@@ -143,62 +169,17 @@ extern void freevoaidlc()
 
     freetrackset(&tracks);
     free_match(&matchs);
+    if (filts.Px) free(filts.Px); filts.Px=NULL;
     freetrackimgbuf();
-}
-/* trace ins states ----------------------------------------------------------*/
-extern void traceinss(int level, const double *Cbe,const double *re,
-                      const double *ve,gtime_t time)
-{
-    double pos[3],Cne[9],Cnb[9],rpy[3],vel[3];
-    char s[64];
-    time2str(time,s,3);
-    trace(level,"time  =%s\n",s);
-    ecef2pos(re,pos);
-    ned2xyz(pos,Cne);
-    matmul3("TN",Cbe,Cne,Cnb);
-    dcm2rpy(Cnb,rpy);
-    trace(level,"attn =%8.5f %8.5f %8.5f\n",rpy[0]*R2D,rpy[1]*R2D,rpy[2]*R2D);
-
-    if (ve) {
-        matmul3v("T",Cne,ve,vel);
-        trace(level,"veln =%8.5f %8.5f %8.5f\n",
-              vel[0],vel[1],vel[2]); /* n-frame */
-
-        matmul3v("T",Cbe,ve,vel);
-        trace(level,"velb =%8.5f %8.5f %8.5f\n",
-              vel[0],vel[1],vel[2]); /* b-frame */
-    }
-}
-/* ins states convert to camera states-----------------------------------------*/
-static void ins2camera(const insstate_t *ins,vostate_t *vo,int flag)
-{
-    double T[3];
-    int i;
-    matmul("NT",3,3,3,1.0,ins->Cbe,ins->Cbc,0.0,vo->Cce);
-    matmul("NN",3,1,3,1.0,ins->Cbe,ins->lbc,0.0,T);
-    for (i=0;i<3;i++) {
-        vo->rc[i]=ins->re[i]+T[i];
-    }
-    if (flag) {
-        matcpy(vo->Cce0,vo->Cce,3,3);
-        matcpy(vo->rc0 ,vo->rc ,1,3);
-    }
-    vo->time=ins->time;
-}
-/* ins states convert to camera states-----------------------------------------*/
-static void camera2ins(const double *Cce,const double *rc,const double *Cbc,
-                       const double *lbc,double *Cbe,double *re)
-{
-    double T[3];
-    int i;
-    matmul("NN",3,3,3,1.0,Cce,Cbc,0.0,Cbe);
-    matmul("NN",3,1,3,1.0,Cbe,lbc,0.0,T);
-    for (i=0;i<3&&re;i++) re[i]=rc[i]-T[i];
 }
 /* initial filter workspace----------------------------------------------------*/
 static int initfilt(const insstate_t *ins)
 {
-    filts.scale=1.0;
+   if (filts.Px==NULL) {
+       filts.nx=ins->nx+ins->nx;
+       filts.Px=zeros(filts.nx,filts.nx);
+       filts.scale=1.0;
+   }
 }
 /* set filter ins states-------------------------------------------------------*/
 static void setfiltinsstat(const insstate_t *ins,int pos)
@@ -220,107 +201,10 @@ static void setfiltstate(const insstate_t *ins,const vostate_t *vo,int pos)
     setfiltcamstat(vo ,pos%2);
     filts.n++;
 }
-/* initial filter workspace---------------------------------------------------*/
-static void initfiltws(insstate_t *ins)
-{
-    setfiltstate(ins,&ins->vo,0);
-    filts.flag=1;
-    filts.n =0;
-    filts.ni=0;
-    addinstate(ins,&filts);
-}
-/* propagate covariance matrix of ins-camera pose in sliding windows----------*/
-static int propagate(insstate_t *ins,const insopt_t *opt)
-{
-    /* add a ins states */
-    return addinstate(ins,&filts);
-}
-/* get camera calibration matrix----------------------------------------------*/
-static void getcameraK(const insstate_t *ins,double *K)
-{
-    /* camera calibration matrix */
-    K[0]=ins->fx; K[4]=ins->fy;
-    K[6]=ins->ox; K[7]=ins->oy;
-    K[8]=1.0;
-}
-/* get camera calibration parameters-------------------------------------------*/
-static void getcamcalibp(const insstate_t *ins,cam_t *cam)
-{
-    cam->k1=ins->k1;
-    cam->k2=ins->k2;
-    cam->p1=ins->p1;
-    cam->p2=ins->p2;
-}
-/* undistort match feature points----------------------------------------------*/
-static void undisfeatpoint(const double *uvd,const double *K,const cam_t *cam,
-                           double *uvu)
-{
-    double uv[3],pf[3],pfn[3];
-    double Ki[9];
-
-    matcpy(Ki,K,3,3); if (matinv(Ki,3)) return;
-    uv[0]=uvd[0];
-    uv[1]=uvd[1]; uv[2]=1.0;
-
-    matmul3v("N",K,uv,pf);
-    undistortradtan(cam,pf,pfn,NULL);
-    matmul3v("N",K,pfn,uvu);
-}
-static void undisdortmatch(match_point *mp,const cam_t *cam,const double *K)
-{
-    double uv[3],uvu[3];;
-
-    /* current feature point */
-    uv[0]=mp->uc; uv[1]=mp->vc;
-    undisfeatpoint(uv,K,cam,uvu);
-    mp->uc=(float)uvu[0];
-    mp->vc=(float)uvu[1];
-
-    /* precious feature point */
-    uv[0]=mp->up;
-    uv[1]=mp->vp;
-    undisfeatpoint(uv,K,cam,uvu);
-    mp->up=(float)uvu[0];
-    mp->vp=(float)uvu[1];
-}
-/* undistort feature point-----------------------------------------------------*/
-static void undistortfeats(match_set *mset,const voopt_t *opt,const insstate_t *ins)
-{
-    cam_t cam; double K[9];
-    int i;
-
-    /* camera calibration parameters */
-    getcamcalibp(ins,&cam);
-    getcameraK(ins,K);
-
-    /* undistort feature point */
-    for (i=0;i<mset->n;i++) {
-        undisdortmatch(&mset->data[i],&cam,K);
-    }
-}
-/* update all track data------------------------------------------------------*/
-static int updatetrack(const insopt_t *opt,const img_t *img,const insstate_t *ins)
-{
-    match_set *pset=&matchs.mp_dense;
-
-#if USE_BUCKET_FEATS
-    pset=&matchs.mp_bucket;
-#endif
-    /* update track data */
-    if (!match2track(pset,matchs.pt,matchs.time,img->id,&matchs.Ip,&matchs.Ic,
-                     &opt->voopt,&tracks)) {
-
-        trace(2,"update track fail\n");
-        return 0;
-    }
-    /* undistort feature point */
-    undistortfeats(&matchs.mp_bucket,&opt->voopt,ins);
-    return 1;
-}
 /* estimate mono-camera motion-------------------------------------------------*/
-static int estmotion(const match_set *pset,const voopt_t *opt,double *dT,double *ratio)
+static int estmotion(const match_set *pset,const voopt_t *opt,double *dT)
 {
-    return estmonort(opt,pset,dT,ratio);
+    return estmonort(opt,pset,dT,NULL);
 }
 /* update camera states--------------------------------------------------------*/
 static int updatecamera(vostate_t *vo,const insopt_t *opt,const double *dT,
@@ -350,6 +234,49 @@ static int updatecamera(vostate_t *vo,const insopt_t *opt,const double *dT,
     vo->time=time;
     return 1;
 }
+/* update all track data------------------------------------------------------*/
+static int updatetrack(const insopt_t *opt,const img_t *img)
+{
+    match_set *pset=&matchs.mp_dense;
+
+#if USE_BUCKET_FEATS
+    pset=&matchs.mp_bucket;
+#endif
+    /* update track data */
+    if (!match2track(pset,matchs.pt,matchs.time,img->id,&matchs.Ip,&matchs.Ic,
+                     &opt->voopt,&tracks)) {
+
+        trace(2,"update track fail\n");
+        return 0;
+    }
+    return 1;
+}
+/* ins states convert to camera states-----------------------------------------*/
+static void ins2camera(const insstate_t *ins,vostate_t *vo,int flag)
+{
+    double T[3];
+    int i;
+    matmul("NT",3,3,3,1.0,ins->Cbe,ins->Cbc,0.0,vo->Cce);
+    matmul("NN",3,1,3,1.0,ins->Cbe,ins->lbc,0.0,T);
+    for (i=0;i<3;i++) {
+        vo->rc[i]=ins->re[i]+T[i];
+    }
+    if (flag) {
+        matcpy(vo->Cce0,vo->Cce,3,3);
+        matcpy(vo->rc0 ,vo->rc ,1,3);
+    }
+    vo->time=ins->time;
+}
+/* ins states convert to camera states-----------------------------------------*/
+static void camera2ins(const double *Cce,const double *rc,const double *Cbc,
+                       const double *lbc,double *Cbe,double *re)
+{
+    double T[3];
+    int i;
+    matmul("NN",3,3,3,1.0,Cce,Cbc,0.0,Cbe);
+    matmul("NN",3,1,3,1.0,Cbe,lbc,0.0,T);
+    for (i=0;i<3&&re;i++) re[i]=rc[i]-T[i];
+}
 /* update track data-----------------------------------------------------------*/
 static int updatealltrack(const insstate_t *ins,const insopt_t *opt,const img_t *img,
                           vostate_t *vo)
@@ -360,14 +287,13 @@ static int updatealltrack(const insstate_t *ins,const insopt_t *opt,const img_t 
         return 0;
     }
     /* update track data */
-    if (!updatetrack(opt,img,ins)) return 0;
+    if (!updatetrack(opt,img)) return 0;
 
     /* estimate mono-camera motion */
-    vo->status=estmotion(&matchs.mp_bucket,&opt->voopt,vo->dT,&vo->ratio);
-    if (!vo->status||vo->ratio<THRES_RATIO) {
+    vo->status=estmotion(&matchs.mp_bucket,&opt->voopt,vo->dT);
+    if (!vo->status) {
 
         trace(2,"estimate motion fail\n");
-        ins2camera(ins,vo,0);
         return 0;
     }
     /* update camera states */
@@ -377,36 +303,39 @@ static int updatealltrack(const insstate_t *ins,const insopt_t *opt,const img_t 
     setfiltstate(ins,vo,1);
     return 1;
 }
-/* jacobians of bg------------------------------------------------------------*/
-static void jacob_bgk(const double *Rk_1,const double *Rj,const double *omgb,
-                      const double dt,double *Jbgk)
+/* propagate covariance matrix of ins-camera pose in sliding windows----------*/
+static int propagate(insstate_t *ins,const insopt_t *opt)
 {
-    double dR[9],phi[3],Jr[9];
+    int i,j,nx=ins->nx;
+    double *T,*Pp;
 
-    matmul("TN",3,3,3,1.0,Rk_1,Rj,0.0,dR);
-    phi[0]=omgb[0]*dt;
-    phi[1]=omgb[1]*dt;
-    phi[2]=omgb[2]*dt;
+    if (filts.nx==0||filts.Px==NULL) return 1;
 
-    so3jac(phi,Jr);
-    matmul("TN",3,3,3,dt,dR,Jr,0.0,Jbgk);
-}
-static void jacob_bg(const double *z,const double dt,double *Jbg)
-{
-    inss_t *pins=filts.insdata;
-    double Jbgk[9],Jbgi[9]={0},Jr[9],*Rk_1,*Rj,Rz[9];
-    int i,j;
-
-    for (Rj=pins[filts.ni-1].Cbe,i=1;i<filts.ni;i++) {
-        Rk_1=pins[i].Cbe;
-        jacob_bgk(Rk_1,Rj,pins[i-1].omgb,dt,Jbgk);
-        for (j=0;j<9;j++) {
-            Jbgi[j]+=Jbgk[j];
+    T =zeros(nx,nx);
+    Pp=zeros(nx,nx);
+    for (i=0;i<nx;i++) {
+        for (j=0;j<nx;j++) Pp[i+j*nx]=filts.Px[i+nx+(j+nx)*filts.nx];
+    }
+    /* covariance of current ins states */
+    matmul33("NNT",ins->F,Pp,ins->F,nx,nx,nx,nx,T);
+    for (i=0;i<nx;i++) {
+        for (j=0;j<nx;j++) filts.Px[i+j*filts.nx]=T[i+j*nx];
+    }
+    /* covariance of precious and current ins states */
+    matmul("NN",nx,nx,nx,1.0,ins->F,ins->P,0.0,T);
+    for (i=0;i<nx;i++) {
+        for (j=nx;j<2*nx;j++) {
+            filts.Px[i+j*filts.nx]=filts.Px[j+i*filts.nx]=T[i+(j-nx)*nx];
         }
     }
-    so3jac(z,Jr);
-    so3_exp(z,Rz);
-    matmul33("NTN",Jr,Rz,Jbgi,3,3,3,3,Jbg);
+    trace(3,"Px=\n");
+    tracemat(3,filts.Px,filts.nx,filts.nx,15,8);
+
+    /* add a ins states */
+    addinstate(ins,&filts);
+
+    free(T);
+    return 1;
 }
 /* check estimated states----------------------------------------------------*/
 static int chkest_state(const double *x,const insopt_t *opt)
@@ -425,14 +354,74 @@ static int chkest_state(const double *x,const insopt_t *opt)
     }
     return 1;
 }
+/* jabocians of attitude error------------------------------------------------*/
+static void jacob_att(const double *z,const double *Ri,const double *Rj,
+                      double *Jai,double *Jaj)
+{
+    double Jr[9];
+
+    so3jac(z,Jr);
+    matmul("NT",3,3,3,-1.0,Jr,Rj,0.0,Jai);
+    matmul("NT",3,3,3, 1.0,Jr,Rj,0.0,Jaj);
+}
+/* jacobians of bg------------------------------------------------------------*/
+static void jacob_bgk(const double *Rk_1,const double *Rj,const double *omgb,
+                      const double dt,double *Jbgk)
+{
+    double dR[9],phi[3],Jr[9];
+
+    matmul("TN",3,3,3,1.0,Rk_1,Rj,0.0,dR);
+    phi[0]=omgb[0]*dt;
+    phi[1]=omgb[1]*dt;
+    phi[2]=omgb[2]*dt;
+
+    so3jac(phi,Jr);
+    matmul("NN",3,3,3,dt,dR,Jr,0.0,Jbgk);
+}
+static void jacob_bg(const double *z,const double dt,double *Jbg)
+{
+    inss_t *pins=filts.insdata;
+    double Jbgk[9],Jbgi[9]={0},Jr[9],*Rk_1,*Rj,Rz[9];
+    int i,j;
+
+    for (Rj=pins[filts.ni-1].Cbe,i=1;i<filts.ni;i++) {
+        Rk_1=pins[i].Cbe;
+        jacob_bgk(Rk_1,Rj,pins[i-1].omgb,dt,Jbgk);
+        for (j=0;j<9;j++) {
+            Jbgi[j]+=Jbgk[j];
+        }
+    }
+    so3jac(z,Jr);
+    so3_exp(z,Rz);
+    matmul33("NTN",Jr,Rz,Jbgi,3,3,3,3,Jbg);
+}
+/* correction of ins states---------------------------------------------------*/
+static void correction(const double *dx,const insopt_t *opt,insstate_t *ins)
+{
+    int i,iba,ibg;
+
+    iba=xiBa(opt); ibg=xiBg(opt);
+    corratt(dx,ins->Cbe);
+
+    /* close-loop velocity and position correction */
+    for (i=0;i<3;i++) {
+        ins->ve[i]-=dx[xiV(opt)+i];
+        ins->re[i]-=dx[xiP(opt)+i];
+    }
+    /* close-loop accl and gyro bias */
+    for (i=0;i<3;i++) {
+        ins->ba[i]+=dx[iba+ins->nx+i];
+        ins->bg[i]+=dx[ibg+ins->nx+i];
+    }
+}
 /* vo aid filter of attitude--------------------------------------------------*/
 static int voflt_att(insstate_t *ins,const insopt_t *opt,const vostate_t *vo)
 {
     double Ci1[9],Ci2[9],ri1[3],ri2[3];
-    double dCc[9],dCi[9],dC[9],r[3],z[3],Jbg[9];
-    double *H,*v,*R,*x,*P;
-    int i,j,nv,nx=ins->nx;
-    int ibg,nbg;
+    double dCc[9],dCi[9],dC[9],r[3],z[3],Jai[9],Jaj[9],Jbg[9];
+    double *H,*v,*R,*x;
+    int i,j,nx=filts.nx,nv,ns=ins->nx;
+    int na,ia1,ia2,ibg,nbg;
 
     trace(3,"voflt_att:\n");
 
@@ -447,19 +436,24 @@ static int voflt_att(insstate_t *ins,const insopt_t *opt,const vostate_t *vo)
     matmul("TN",3,3,3,1.0,dCi,dCc,0.0,dC);
     so3_log(dC,z,NULL);
 
-    H=zeros(3,nx); v=zeros(3, 1);
-    R=zeros(3, 3); x=zeros(nx,1);
-    P=zeros(nx,nx);
+    H=zeros(3,nx); v=zeros(3,1);
+    R=zeros(3,3); x=zeros(nx,1);
 
-    ibg=xiBg(opt);
-    nbg=xnBg(opt);
+    ia1=ns+xiA (opt); ia2=xiA (opt); na=xnA(opt);
+    ibg=ns+xiBg(opt); nbg=xnBg(opt);
 
-    jacob_bg(z,ins->dt,Jbg);
+    jacob_att(z,filts.Cbe[0],filts.Cbe[1],Jai,Jaj);
+    jacob_bg (z,ins->dt,Jbg);
 
     for (nv=0,i=0;i<3;i++) {
         if (fabs(v[nv]=z[i])>MAXRES_POSE) continue;
-
-        for (j=ibg;j<ibg+nbg;j++) H[j+nv*nx]=-Jbg[i+(j-ibg)*3];
+#if 1
+        for (j=ia1;j<ia1+na;j++) H[j+nv*nx]=Jai[i+(j-ia1)*3];
+        for (j=ia2;j<ia2+na;j++) H[j+nv*nx]=Jaj[i+(j-ia2)*3];
+#endif
+        for (j=ibg;j<ibg+nbg;j++) {
+            H[j+nv*nx]=-Jbg[i+(j-ibg)*3];
+        }
         r[nv++]=SQR(VARPOSE);
     }
     if (v&&nv) {
@@ -472,37 +466,167 @@ static int voflt_att(insstate_t *ins,const insopt_t *opt,const vostate_t *vo)
         for (i=0;i<nv;i++) {
             R[i+i*nv]=r[i];
         }
-        trace(3,"R=\n"); tracemat(3,R,nv,nv,12,6);
+        trace(3,"R=\n");
+        tracemat(3,R,nv,nv,12,6);
     }
     if (nv<=0) {
         trace(2,"pose fusion filter fail\n");
-        free(x); free(v); free(P);
+        free(x); free(v);
         free(H); free(R);
         return 0;
     }
-    matcpy(P,ins->P,nx,nx);
-    if (!filter(x,P,H,v,R,nx,nv)) {
+    if (!filter(x,filts.Px,H,v,R,nx,nv)) {
         if (!chkest_state(x,opt)) goto exit;
 
         trace(3,"dx=\n");
         tracemat(3,x,nx,1,12,6);
 
-        /* corrections */
-        clp(ins,opt,x);
-
-        /* update covariance matrix */
-        matcpy(ins->P,P,nx,nx);
+        for (i=0;i<ins->nx;i++) {
+            for (j=0;j<ins->nx;j++) ins->P[i+j*ins->nx]=filts.Px[i+j*nx];
+        }
+        correction(x,opt,ins);
 
         trace(3,"Px=\n");
-        tracemat(3,P,nx,nx,12,6);
+        tracemat(3,filts.Px,filts.nx,filts.nx,12,6);
     }
     else {
         trace(2,"filter fail\n");
     }
 exit:
-    free(x); free(v); free(P);
+    free(x); free(v);
     free(H); free(R);
     return 1;
+}
+/* jacobians of attitude wrt bg-----------------------------------------------*/
+static void jacob_dadbg(int p,int q,double *Jbg)
+{
+    inss_t *pins=filts.insdata;
+    double Jbgk[9],*Rk_1,*Rj,dR[9],T[9];
+    int i,j;
+
+    setzero(Jbg,3,3);
+
+    for (Rj=pins[q].Cbe,i=p+1;i<q;i++) {
+        Rk_1=pins[i].Cbe;
+        jacob_bgk(Rk_1,Rj,pins[i-1].omgb,pins[i-1].dt,Jbgk);
+
+        matmul("TN",3,3,3,1.0,Rk_1,Rj,0.0,dR);
+        matmul("NN",3,3,3,1.0,dR,Jbgk,0.0,T);
+        for (j=0;j<9;j++) Jbg[j]+=T[j];
+    }
+}
+/* jacobians of i-position----------------------------------------------------*/
+static void jacob_posi(const double *Cbe,double *Jpi)
+{
+    int i,j;
+    for (i=0;i<3;i++) for (j=0;j<3;j++) Jpi[i+j*3]=-Cbe[j+i*3];
+}
+/* jacobians of j-position ---------------------------------------------------*/
+static void jacob_posj(const double *Cbe,double *Jpj)
+{
+    int i,j;
+    for (i=0;i<3;i++) for (j=0;j<3;j++) Jpj[i+j*3]=Cbe[j+i*3];
+}
+/* jacobians of i-velocity----------------------------------------------------*/
+static void jacob_veli(const double *Cbe,const double dt,double *Jvi)
+{
+    int i,j;
+    for (i=0;i<3;i++) for (j=0;j<3;j++) {
+            Jvi[i+j*3]=-Cbe[j+i*3]*dt;
+        }
+}
+/* jacobians of position wrt i-attitude---------------------------------------*/
+static void jacob_dpdai(const double *Cbe,const double *ri,const double *rj,
+                        const double *vi,const double dt,
+                        double *Jdpdai)
+{
+    double ge[3],dp[3],W[9];
+    int i;
+
+    pregrav(ri,ge);
+    for (i=0;i<3;i++) dp[i]=rj[i]-ri[i]-vi[i]*dt-0.5*ge[i]*dt*dt;
+    skewsym3(dp,W);
+    matmul("TN",3,3,3,1.0,Cbe,W,0.0,Jdpdai);
+}
+/* jacobians of velocity wrt ba-----------------------------------------------*/
+static void jacob_dvdba(const double dt,int i,int j,double *Jdvdba)
+{
+    double *Rk,*Ri,dR[9];
+    int k,p;
+
+    setzero(Jdvdba,3,3);
+
+    for (Ri=filts.insdata[i].Cbe,k=i;k<=j;k++) {
+        Rk=filts.insdata[k].Cbe;
+        matmul("TN",3,3,3,1.0,Ri,Rk,0.0,dR);
+
+        for (p=0;p<9;p++) {
+            Jdvdba[p]+=dR[p]*dt;
+        }
+    }
+}
+/* jacobians of velocity wrt bg-----------------------------------------------*/
+static void jacob_dvdbg(const double dt,int i,int j,double *Jdvdbg)
+{
+    double *Rk,*Ri,dR[9],W[9],Jdadbg[9];
+    double T[9];
+    int k,p;
+
+    setzero(Jdvdbg,3,3);
+
+    for (Ri=filts.insdata[i].Cbe,k=i;k<j;k++) {
+        Rk=filts.insdata[k].Cbe;
+        matmul("TN",3,3,3,1.0,Ri,Rk,0.0,dR);
+        skewsym3(filts.insdata[k].fb,W);
+
+        jacob_dadbg(i,k,Jdadbg);
+
+        matmul33("NNN",dR,W,Jdadbg,3,3,3,3,T);
+        for (p=0;p<9;p++) {
+            Jdvdbg[p]+=T[p]*dt;
+        }
+    }
+}
+/* jacobians of position wrt ba-----------------------------------------------*/
+static void jacob_dpdba(const double dt,double *Jdpdba)
+{
+    double Jdvdba[9],dR[9],*Rk,*Ri;
+    int i,j;
+
+    setzero(Jdpdba,3,3);
+
+    for (Ri=filts.insdata[0].Cbe,i=0;i<filts.ni-1;i++) {
+        Rk=filts.insdata[i].Cbe;
+        matmul("TN",3,3,3,1.0,Ri,Rk,0.0,dR);
+
+        jacob_dvdba(dt,0,i,Jdvdba);
+        for (j=0;j<9;j++) {
+            Jdpdba[j]+=Jdvdba[j]*dt-0.5*dR[j]*dt*dt;
+        }
+    }
+}
+/* jacobians of position wrt bg-----------------------------------------------*/
+static void jacob_dpdbg(const double dt,double *Jdpdbg)
+{
+    double Jdvdbg[9],Jdadbg[9],dR[9],*Rk,*Ri;
+    double W[9],T[9];
+    int k,j;
+
+    setzero(Jdpdbg,3,3);
+
+    for (Ri=filts.insdata[0].Cbe,k=0;k<filts.ni-1;k++) {
+        Rk=filts.insdata[k].Cbe;
+        matmul("TN",3,3,3,1.0,Ri,Rk,0.0,dR);
+        jacob_dvdbg(dt,0,k,Jdvdbg);
+
+        jacob_dadbg(0,k,Jdadbg);
+
+        skewsym3(filts.insdata[k].fb,W);
+        matmul33("NNN",dR,W,Jdadbg,3,3,3,3,T);
+        for (j=0;j<9;j++) {
+            Jdpdbg[j]+=Jdvdbg[j]*dt-0.5*T[j]*dt*dt;
+        }
+    }
 }
 /* residual of increment position---------------------------------------------*/
 static void pos_residual(const insstate_t *ins,const double dt,double *z)
@@ -536,126 +660,39 @@ static void pos_residual(const insstate_t *ins,const double dt,double *z)
     z[1]=dpi[1]-dpc[1];
     z[2]=dpi[2]-dpc[2];
 }
-/* jacobians of velocity wrt ba-----------------------------------------------*/
-static void jacob_dvdba(const double dt,int i,int j,double *Jdvdba)
-{
-    double *Rk,*Ri,dR[9];
-    int k,p;
-
-    setzero(Jdvdba,3,3);
-
-    for (Ri=filts.insdata[i].Cbe,k=i;k<j;k++) {
-        Rk=filts.insdata[k].Cbe;
-        matmul("TN",3,3,3,1.0,Ri,Rk,0.0,dR);
-
-        for (p=0;p<9;p++) {
-            Jdvdba[p]+=dR[p]*dt;
-        }
-    }
-}
-/* jacobians of position wrt ba-----------------------------------------------*/
-static void jacob_dpdba(const double dt,double *Jdpdba)
-{
-    double Jdvdba[9],dR[9],*Rk,*Ri;
-    int i,j;
-
-    setzero(Jdpdba,3,3);
-
-    for (Ri=filts.insdata[0].Cbe,i=0;i<filts.ni-1;i++) {
-        Rk=filts.insdata[i].Cbe;
-        matmul("TN",3,3,3,1.0,Ri,Rk,0.0,dR);
-
-        jacob_dvdba(dt,0,i,Jdvdba);
-        for (j=0;j<9;j++) {
-            Jdpdba[j]+=Jdvdba[j]*dt-0.5*dR[j]*dt*dt;
-        }
-    }
-}
-/* jacobians of attitude wrt bg-----------------------------------------------*/
-static void jacob_dadbg(int p,int q,double *Jbg)
-{
-    inss_t *pins=filts.insdata;
-    double Jbgk[9],*Rk_1,*Rj;
-    int i,j;
-
-    setzero(Jbg,3,3);
-
-    for (Rj=pins[q].Cbe,i=p+1;i<q;i++) {
-        Rk_1=pins[i].Cbe;
-        jacob_bgk(Rk_1,Rj,pins[i-1].omgb,pins[i-1].dt,Jbgk);
-        for (j=0;j<9;j++) Jbg[j]+=Jbgk[j];
-    }
-}
-/* jacobians of velocity wrt bg-----------------------------------------------*/
-static void jacob_dvdbg(const double dt,int i,int j,double *Jdvdbg)
-{
-    double *Rk,*Ri,dR[9],W[9],Jdadbg[9];
-    double T[9];
-    int k,p;
-
-    setzero(Jdvdbg,3,3);
-
-    for (Ri=filts.insdata[i].Cbe,k=i;k<j;k++) {
-        Rk=filts.insdata[k].Cbe;
-        matmul("TN",3,3,3,1.0,Ri,Rk,0.0,dR);
-        skewsym3(filts.insdata[k].fb,W);
-
-        jacob_dadbg(i,k,Jdadbg);
-
-        matmul33("NNN",dR,W,Jdadbg,3,3,3,3,T);
-        for (p=0;p<9;p++) {
-            Jdvdbg[p]+=T[p]*dt;
-        }
-    }
-}
-/* jacobians of position wrt bg-----------------------------------------------*/
-static void jacob_dpdbg(const double dt,double *Jdpdbg)
-{
-    double Jdvdbg[9],Jdadbg[9],dR[9],*Rk,*Ri;
-    double W[9],T[9];
-    int k,j;
-
-    setzero(Jdpdbg,3,3);
-
-    for (Ri=filts.insdata[0].Cbe,k=0;k<filts.ni-1;k++) {
-        Rk=filts.insdata[k].Cbe;
-        matmul("TN",3,3,3,1.0,Ri,Rk,0.0,dR);
-        jacob_dvdbg(dt,0,k,Jdvdbg);
-
-        jacob_dadbg(0,k,Jdadbg);
-
-        skewsym3(filts.insdata[k].fb,W);
-        matmul33("NNN",dR,W,Jdadbg,3,3,3,3,T);
-        for (j=0;j<9;j++) {
-            Jdpdbg[j]+=Jdvdbg[j]*dt-0.5*T[j]*dt*dt;
-        }
-    }
-}
 /* vo aid filter of position--------------------------------------------------*/
 static int voflt_pos(insstate_t *ins,const insopt_t *opt,const vostate_t *vo)
 {
-    double z[3],r[3],Jdpdba[9],Jdpdbg[9];
-    double *v,*H,*R,*x,*P;
-    int i,j,ibg,nbg,iba,nba,nv;
-    int nx=ins->nx;
+    double Jpi[9],Jpj[9],z[3],r[3];
+    double Jdpdba[9],Jdpdbg[9];
+    double *v,*H,*R,*x;
+    int i,j,ipi,ipj,np,ibg,nbg,iba,nba,nv;
+    int ns=ins->nx,nx=filts.nx;
 
     trace(3,"voflt_pos:\n");
 
     jacob_dpdba(ins->dt,Jdpdba); jacob_dpdbg(ins->dt,Jdpdbg);
+    jacob_posi(filts.Cbe[0],Jpi);
+    jacob_posj(filts.Cbe[0],Jpj);
+
     pos_residual(ins,ins->dt,z);
 
-    ibg=xiBg(opt); nbg=xnBg(opt);
-    iba=xiBa(opt); nba=xnBa(opt);
+    ipi=ns+xiP (opt); ipj=xiP (opt); np=xnP(opt);
+    ibg=ns+xiBg(opt); nbg=xnBg(opt);
+    iba=ns+xiBa(opt); nba=xnBa(opt);
 
     H=zeros(3,nx); v=zeros(3, 1);
     R=zeros(3, 3); x=zeros(nx,1);
-    P=zeros(nx,nx);
 
     for (nv=0,i=0;i<3;i++) {
         if (fabs(v[nv]=z[i])>MAXRES_POS) continue;
 
         for (j=iba;j<iba+nba;j++) H[j+nv*nx]=Jdpdba[i+(j-iba)*3];
         for (j=ibg;j<ibg+nbg;j++) H[j+nv*nx]=Jdpdbg[i+(j-ibg)*3];
+#if 1
+        for (j=ipi;j<ipi+np;j++) H[j+nv*nx]=Jpi[i+(j-ipi)*3];
+        for (j=ipj;j<ipj+np;j++) H[j+nv*nx]=Jpj[i+(j-ipj)*3];
+#endif
         r[nv++]=SQR(VARPOS);
     }
     if (v&&nv) {
@@ -674,33 +711,48 @@ static int voflt_pos(insstate_t *ins,const insopt_t *opt,const vostate_t *vo)
     }
     if (nv<=0) {
         trace(2,"position fusion filter fail\n");
-        free(x); free(v); free(P);
+        free(x); free(v);
         free(H); free(R);
         return 0;
     }
-    matcpy(P,ins->P,nx,nx);
-    if (!filter(x,P,H,v,R,nx,nv)) {
+    if (!filter(x,filts.Px,H,v,R,nx,nv)) {
         if (!chkest_state(x,opt)) goto exit;
 
         trace(3,"dx=\n");
         tracemat(3,x,nx,1,12,6);
 
-        /* corrections */
-        clp(ins,opt,x);
-
-        /* update covariance matrix */
-        matcpy(ins->P,P,nx,nx);
-
+        for (i=0;i<ins->nx;i++) {
+            for (j=0;j<ins->nx;j++) ins->P[i+j*ins->nx]=filts.Px[i+j*nx];
+        }
+        correction(x,opt,ins);
+        
         trace(3,"Px=\n");
-        tracemat(3,P,nx,nx,12,6);
+        tracemat(3,filts.Px,filts.nx,filts.nx,12,6);
     }
     else {
         trace(2,"filter fail\n");
     }
 exit:
-    free(x); free(v); free(P);
+    free(x); free(v);
     free(H); free(R);
     return 1;
+}
+/* initial filter workspace---------------------------------------------------*/
+static void initfiltws(insstate_t *ins)
+{
+    int i,j,ns=ins->nx;
+    
+    if (filts.nx==0) initfilt(ins);
+    setfiltstate(ins,&ins->vo,0);
+    for (i=ns;i<ns+ns;i++) {
+        for (j=ns;j<ns+ns;j++) filts.Px[i+j*filts.nx]=ins->P[i-ns+(j-ns)*ns];
+    }
+    trace(3,"filt.Px=\n");
+    tracemat(3,filts.Px,filts.nx,filts.nx,12,6);
+
+    filts.flag=1; filts.n=0;
+    filts.ni=0;
+    addinstate(ins,&filts);
 }
 /* update.--------------------------------------------------------------------*/
 static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
@@ -741,10 +793,10 @@ static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
  *          int flag        I   update flag
  * return: status (1: ok, 0: fail)
  * ----------------------------------------------------------------------------*/
-extern int voigposlc(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
-                     const img_t *img,int flag)
+extern int voigposlcpr(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
+                       const img_t *img,int flag)
 {
-    trace(3,"voigposlc: time=%s\n",time_str(imu->time,4));
+    trace(3,"voigposlcpre: time=%s\n",time_str(imu->time,4));
 
     switch (flag) {
         case 0: return propagate(ins,opt);
@@ -755,5 +807,4 @@ extern int voigposlc(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
     }
     return 0;
 }
-
 

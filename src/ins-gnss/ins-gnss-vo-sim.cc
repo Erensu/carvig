@@ -178,9 +178,9 @@ static int randfeatpos(gtime_t time,const cam_t *cam,double *fpos,double *uv)
     for (i=0;i<3;i++) {
         xyz[i]=fpos[i]/fpos[2];
     }
-#if 0
-    uv[0]=xyz[0]*cam->K[0]+cam->K[6]+getgaussian(0.1);
-    uv[1]=xyz[1]*cam->K[4]+cam->K[7]+getgaussian(0.1);
+#if 1
+    uv[0]=xyz[0]*cam->K[0]+cam->K[6]+getgaussian(3);
+    uv[1]=xyz[1]*cam->K[4]+cam->K[7]+getgaussian(3);
 #else
     uv[0]=xyz[0]*cam->K[0]+cam->K[6];
     uv[1]=xyz[1]*cam->K[4]+cam->K[7];

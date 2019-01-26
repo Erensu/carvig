@@ -2489,7 +2489,7 @@ static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
 
 #if DO_MONO_VO_EST
     /* monocular visual odometry estimate */
-    ins->vo.status=estmonort(&opt->voopt,&matchs.mp_bucket,ins->vo.dT);
+    ins->vo.status=estmonort(&opt->voopt,&matchs.mp_bucket,ins->vo.dT,NULL);
 #endif
     /* update camera/ins states */
     if (updatefeatmeas(opt,ins,&vofilt,img->time)) {

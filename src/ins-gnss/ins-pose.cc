@@ -179,6 +179,10 @@ extern void so3_jac(const double *phi,double *Jr,double *Jl)
     trace(3,"so3jac:\n");
 
     b=norm(phi,3);
+    if (b<=0.0) {
+        if (Jr) {seteye(Jr,3); return;}
+        if (Jl) {seteye(Jl,3); return;}
+    }
     for (i=0;i<3;i++) a[i]=phi[i]/b;
 
     matmul("NT",3,3,1,1.0,a,a,0.0,T1);

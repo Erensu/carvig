@@ -15,6 +15,7 @@
 #define MAXTIMEDIFF     0.1        /* max time difference for suspend input stream */
 #define OUTSOLFRQ       5          /* frequency of output ins solutions */
 #define ONLY_COUPLED_VO 1          /* only coupled with imu and vision measurement data */
+#define COUPLED_VO_LC   1          /* loosely coupled with vision measurement data */
 
 #define NS(i,j,max)     ((((j)-1)%(max)-(i))<0?(((j)-1)%(max)-(i)+(max)):(((j)-1)%(max)-(i)))
 #define NE(i,j,max)     MAX(0,(((i)-(j))<0?((i)-(j)+(max)):((i)-(j))))
@@ -1731,8 +1732,13 @@ static void *rtksvrthread(void *arg)
                 if (iopt->magh) {
                     magnetometer(ins,iopt,&mag);
                 }
+#if COUPLED_VO_LC
+                /* coupled with vo loosely */
+                voigposlc(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt));
+#else
                 /* coupled with vo */
                 voigpos(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt));
+#endif
                 rtksvrunlock(svr);
 
                 /* output results */

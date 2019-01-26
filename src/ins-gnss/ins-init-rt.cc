@@ -303,6 +303,7 @@ extern int insinitgiven(rtksvr_t *svr,const imud_t *imu)
     insopt_t *iopt=&svr->rtk.opt.insopt;
     insstate_t *ins=&svr->rtk.ins;
     double Cnb[9],Cne[9],rpy[3],rn0[3];
+    int i;
 
     trace(3,"insinitgiven:\n");
 
@@ -312,10 +313,7 @@ extern int insinitgiven(rtksvr_t *svr,const imud_t *imu)
     /* initial carvig-sever */
     initinsrt(svr);
 
-    rpy[0]=iopt->att0[0]*D2R;
-    rpy[1]=iopt->att0[1]*D2R;
-    rpy[2]=iopt->att0[2]*D2R;
-
+    for (i=0;i<3;i++) rpy[i]=iopt->att0[i]*D2R;
     rn0[0]=iopt->rn0[0]*D2R;
     rn0[1]=iopt->rn0[1]*D2R;
     rn0[2]=iopt->rn0[2];

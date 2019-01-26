@@ -128,8 +128,7 @@ static void essential(const double *Tc,const double *Tp,const double *F,const do
     /* essential matrix */
     matmul33("NNT",U,D,V,3,3,3,3,E);
 
-    free(W); free(U);
-    free(V); free(D);
+    free( W); free( U); free(V); free(D);
     free(E1); free(E2);
 }
 /* triangulate by chieral-method--------------------------------------------
@@ -213,8 +212,8 @@ static int e2rt(const frame_t *frame,const double *E,const double *K,double *X,
     n=frame->n;
 
     Xc=mat(4,n); Ro=mat(3,3); to=mat(1,3);
-    U=mat(3,3); S=mat(1,3); V=mat(3,3);
-    T=mat(3,3); Ra=mat(3,3); Rb=mat(3,3);
+    U =mat(3,3); S =mat(1,3); V =mat(3,3);
+    T =mat(3,3); Ra=mat(3,3); Rb=mat(3,3);
 
     /* extract T,R1,R2 (8 solutions) */
     svd(E,3,3,U,S,V);
@@ -436,9 +435,10 @@ static int normfeature(const frame_t *frame,const voopt_t *opt,
  * args   :  voopt_t *opt    I  visual odometry options
  *           frame_t *frame  I  feature points frame
  *           double *Tr      O  rotation and translation
+ *           double *ratio   O  ratio of inliers
  * return : 1 (ok) or 0 (fail)
  * --------------------------------------------------------------------------*/
-static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr)
+static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr,double *ratio)
 {
     int i,j,n,*idx,*in,*inl,ni,m;
     double K[9],Tp[9],Tc[9],E[9],F[9],U[9],W[3],V[9],D[9];
@@ -483,6 +483,9 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr)
         trace(2,"no enough inliers\n");
         goto exit;
     }
+    /* ratio of inliers */
+    if (ratio) *ratio=(double)ni/nf.n;
+
     /* refine F using all inliers */
     fundamental(&nf,in,ni,F);
 
@@ -551,9 +554,10 @@ static void tfvec2mat(const double *tr,double *T)
  * args   :  voopt_t *opt      I  visual odometry options
  *           match_set_t *mf   I  feature list
  *           double *Tr        O  rotation and translation
+ *           double *ratio     O  ratio of inliers
  * return : 1 (ok) or 0 (fail)
  * --------------------------------------------------------------------------*/
-extern int estmonort(const voopt_t *opt,const match_set_t *mf,double *Tr)
+extern int estmonort(const voopt_t *opt,const match_set_t *mf,double *Tr,double *ratio)
 {
     frame_t frame={0};
     fea_t f={0};
@@ -570,7 +574,7 @@ extern int estmonort(const voopt_t *opt,const match_set_t *mf,double *Tr)
         /* add new feat. */
         if (!addfeature(&frame,&f)) continue;
     }
-    if (!(flag=estmono(opt,&frame,tr))) {
+    if (!(flag=estmono(opt,&frame,tr,ratio))) {
         trace(3,"mono visual odometry motion estimate fail\n");
         freeframe(&frame);
         return 0;
