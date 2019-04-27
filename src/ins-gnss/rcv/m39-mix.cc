@@ -107,8 +107,10 @@ static int readimgbuf(raw_t *raw)
         }
     }
 ok:
+#if 0
     /* display image for debug */
     dipsplyimg(&raw->img);
+#endif
     return 11;
 }
 /* decode m39-mix raw data---------------------------------------------------*/

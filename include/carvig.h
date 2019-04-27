@@ -77,7 +77,7 @@ extern "C"{
 #define LAPACK
 #define TRACE                           /* trace information for debug */
 #define TRACE_INS     1                 /* trace ins updates information */
-#define TRACE_STDERR  1                 /* trace information to stderr if set */
+#define TRACE_STDERR  0                 /* trace information to stderr if set */
 #define VIG_TRACE_MAT 1                 /* trace matrix for debugs */
 #define MAXBUFF     4096                /* size of line buffer */
 #define MAXHIST     256                 /* size of history buffer */
@@ -560,6 +560,7 @@ extern "C"{
 #define STRFMT_IGVSIM_IMU  38           /* stream format: ins-gnss-vo multisensor simulator imu measurement data  */
 #define STRFMT_IGVSIM_GNSS 39           /* stream format: ins-gnss-vo multisensor simulator gnss measurement data*/
 #define STRFMT_IGVSIM_FEATALL 40        /* stream format: read all ins-gnss-vo multisensor simulator feature point measurement data */
+#define STRFMT_STIM300        41        /* stream format: STIM300 imu raw data */
 
 #define GROUND_TRUTH_KARL  1            /* Karlsruhe dataset ground truth solution format */
 #define GROUND_TRUTH_EUROC 2            /* EuRoC MAV dataset ground truth solution format */
@@ -685,6 +686,8 @@ extern "C"{
 
 #define POSE_CAM           1            /* fusion external pose measurement from camera visual odometry */
 #define POSE_DUAL_ANT      2            /* fusion external pose measurement from dual antennas */
+
+#define COPLED_RB          0            /* ins/gnss coupled with robocentric formulation */
 
 #define P2_5        0.03125               /* 2^-5 */
 #define P2_6        0.015625              /* 2^-6 */
@@ -946,7 +949,7 @@ typedef struct {            /* gnss positioning result for ins-gnss loosely coup
 typedef struct {            /* pose measurement data struct */
     gtime_t time;           /* time of pose measurement data */
     int type;               /* pose measurement data type (POSE_FUSION_???) */
-    int stat;               /* pose measurement data status () */
+    int stat;               /* pose measurement data status */
     double rpy[3],len;      /* pose measurement data expressed in euler angle (Cm=R(x)*R(y)*R(z)) and baseline length (m) */
     double C[9];            /* pose measurement data expressed in dcm format */
     double var[3];          /* pose measurement variance expressed in tangent space or euler angle */
@@ -969,12 +972,11 @@ typedef struct {            /* gnss position/velocity measurement */
 typedef struct {               /* camera states type */
     gtime_t time;              /* camera states time */
     int status;                /* monocular visual odometry estimate status */
-    double ratio;              /* ratio of inliers */
-    double rc[3],Cce[9],rc0[3],Cce0[3];
-                               /* camera position/velocity/attitude in e-frame */
-    double Ccb[9],lever[3];    /* dcm and lever arm of camera to imu body frame */
-    double dT[16];             /* camera transformation matrix from precious to current */
-    double T[16];              /* camera transformation matrix relative to initial pose */
+    double rc[3],Cce[9],rc0[3],Cce0[9];
+                               /* current camera position/attitude in e-frame */
+    double Cbc[9],lbc[3];      /* dcm and lever arm of camera to imu body frame */
+    double dT[16],ratio;       /* camera transformation matrix from precious to current */
+    double T[16];              /* camera transformation matrix in current epoch */
     double phi[3],P[9];        /* covariance of camera pose expressed in tangent space */
 } vostate_t;
 
@@ -983,8 +985,8 @@ typedef struct {             /* ins states type */
     gtime_t plct,ptct;       /* precious time of ins-gnss loosely/tightly coupled (0: no coupled)*/
     double dt;               /* time difference of precious ins updates and current time */
     double Cbe[9];           /* b-frame to e-frame trans matrix */
-    double re[3],ve[3],ae[3];/* position/velocity/acceleration (e-frame) */
-
+    double re[3],ve[3],ae[3],oxyz[3];
+                             /* position/velocity/acceleration (e-frame) */
     double dtr[6],dtrr;      /* receiver clock bias to time systems (s) and clock‐drift (m/s) */
     
     double rn[3],vn[3],an[3];/* position/velocity/acceleration (n-frame) */
@@ -1638,7 +1640,7 @@ typedef struct {        /* solution type */
     gtime_t time;       /* time (GPST) */
     double rr[9];       /* position/velocity/acceleration (m|m/s|m/s^2) */
                         /* {x,y,z,vx,vy,vz} or {e,n,u,ve,vn,vu} */
-    float  qr[6];       /* position variance/covariance (m^2) */
+    float  qr[6],pqr[6];/* position variance/covariance (m^2) */
                         /* {c_xx,c_yy,c_zz,c_xy,c_yz,c_zx} or */
                         /* {c_ee,c_nn,c_uu,c_en,c_nu,c_ue} */
     float  qv[6];       /* velocity variance/covariance (m^2/s^2) */
@@ -1649,7 +1651,7 @@ typedef struct {        /* solution type */
     double dtr[6];      /* receiver clock bias to time systems (s) */
     double dtrr;        /* receiver clock drift (m/s) about GPST */
     unsigned char type; /* type (0:xyz-ecef,1:enu-baseline) */
-    unsigned char stat; /* solution status (SOLQ_???) */
+    unsigned char stat,pstat; /* solution status (SOLQ_???) */
     unsigned char ns;   /* number of valid satellites */
     unsigned char ista; /* ins update status (INSS_???) */
     float age;          /* age of differential (s) */
@@ -1660,16 +1662,14 @@ typedef struct {        /* solution type */
     double att[3];      /* vehicle attitude (roll,pitch,yaw/deg) */
     double ab[3],vb[3]; /* vehicle acceleration and velocity expressed in frd-frame */
     double ba[3],bg[3]; /* acceleration bias and gyro bias */
+    double Ma[9],Mg[9]; /* Ma and Mg */
     double os,vr[3];    /* odometry scale factor and odometry velocity in rear frame */
     double dv[3];       /* doppler velocity expressed in ecef */
-
-    double Tr[16];      /* camera pose relative to initial position (see also vopt.Oc) */
-    double dT[16];      /* visual odometry relative pose (precious to current) */
-    double vc[3];       /* camera velocity in vision-frame */
-    double var[6];      /* camera measurement variance from precious to current frame */
+    double oxyz[3];     
 
     solvel_t sol_vel;   /* NovAtel OEM6 velocity solution */
     imud_t imu;         /* correctioned imu measurement data */
+    vostate_t vo;       /* vo states */
 } sol_t;
 
 typedef struct {        /* solution buffer type */
@@ -1876,13 +1876,18 @@ typedef struct {        /* solution options type */
     int dopp;           /* doppler output options */
     int wlratio;        /* WL ambiguity fix ratio */
     int outimuraw;      /* output imu raw data option (0:no,1:yes) */
+    int outMa,outMg;    /* output Ma and Mg options (0:no,1:yes) */
+    int outenu;         /* output ENU of ins position */
+    int outvo;          /* output vo states */
 } solopt_t;
 
 typedef struct {              /* file options type */
     char satantp[MAXSTRPATH]; /* satellite antenna parameters file */
     char rcvantp[MAXSTRPATH]; /* receiver antenna parameters file */
-    char navfile[MAXSTRPATH]; /* navigation data file */
+    char navfile[MAXSTRPATH]; /* gps navigation data file */
     char bdsfile[MAXSTRPATH]; /* bds navigation data file */
+    char glofile[MAXSTRPATH]; /* glo navigation data file */
+    char mixfile[MAXSTRPATH]; /* mix navigation data file */
     char stapos [MAXSTRPATH]; /* station positions file */
     char geoid  [MAXSTRPATH]; /* external geoid data file */
     char iono   [MAXSTRPATH]; /* ionosphere data file */
@@ -1943,6 +1948,7 @@ typedef struct {        /* satellite status type */
     double resp[NFREQ]; /* residuals of pseudorange (m) */
     double resc[NFREQ]; /* residuals of carrier-phase (m) */
     unsigned char vsat[NFREQ]; /* valid satellite flag */
+    unsigned char vsatc[NFREQ];/* valid satellite flag for code */
     unsigned char snr [NFREQ]; /* signal strength (0.25 dBHz) */
     unsigned char fix [NFREQ]; /* ambiguity fix flag (1:fix,2:float,3:hold) */
     unsigned char slip[NFREQ]; /* cycle-slip flag */
@@ -1961,6 +1967,8 @@ typedef struct {        /* satellite status type */
     double  phw;        /* phase windup (cycle) */
     gtime_t pt[2][NFREQ]; /* previous carrier-phase time */
     double  ph[2][NFREQ]; /* previous carrier-phase observable (cycle) */
+    double  sdi[NFREQ];   /* single-differenced pseudorange observable by INS */
+    double  sdg[NFREQ];   /* single-differenced pseudorange observable by GNSS */
 } ssat_t;
 
 typedef struct {        /* ambiguity control type */
@@ -1974,23 +1982,23 @@ typedef struct {        /* ambiguity control type */
 
 typedef struct {        /* double-difference ambiguity type */
     gtime_t time;       /* observation time */
-    gtime_t pt;         /* precious epoch time */
     int sat1,sat2;      /* double-difference ambiguity satellite */
     int f;              /* frequency no. */
     int c;              /* count of fix */
     double ratio;       /* LAMBDA ratio */
-    double b;           /* ambiguity value */
-    double pb;          /* precious epoch ambiguity value */
+    double bias;        /* ambiguity value */
 } ddamb_t;
 
 typedef struct {        /* double-difference satellite */
     int sat1,sat2;      /* double difference satellite no. */
     int f;              /* frequency no. */
+    int flag;
 } ddsat_t;
 
 typedef struct {
     int nb;             /* numbers of double-difference ambiguity */
     int nmax;           /* max numbers of double-difference ambiguity */
+    int inherit;        /* ambiguity inherit flag */
     ddamb_t *amb;       /* double difference ambiguity list */
 } amb_t;
 
@@ -2012,6 +2020,7 @@ typedef struct {        /* RTK control/result type */
     ssat_t ssat[MAXSAT];         /* satellite status */
     insstate_t ins;              /* ins states */
     amb_t bias;                  /* double-difference ambiguity list */
+    amb_t wlbias;                /* WL double-difference ambiguity list */
     ddsat_t sat[MAXSAT];         /* double difference satellite list */
 } rtk_t;
 
@@ -2541,7 +2550,7 @@ EXPORT int ionocorr(gtime_t time, const nav_t *nav, int sat, const double *pos,
                     const double *azel, int ionoopt, double *ion, double *var);
 EXPORT int tropcorr(gtime_t time, const nav_t *nav, const double *pos,
                     const double *azel, int tropopt, double *trp, double *var);
-
+EXPORT double gdelaycorr(const int sys, const double *rr,const double *rs);
 /* antenna models ------------------------------------------------------------*/
 EXPORT int  readpcv(const char *file, pcvs_t *pcvs);
 EXPORT pcv_t *searchpcv(int sat, const char *type, gtime_t time,
@@ -2867,6 +2876,10 @@ EXPORT void initP(int is,int ni,int nx,double unc,double unc0,double *P0);
 EXPORT void initx(rtk_t *rtk, double xi, double var, int i);
 EXPORT void insinitx(insstate_t *ins,double xi,double var,int i);
 EXPORT int insinirtobs(rtksvr_t *svr,const obsd_t *obs,int n,const imud_t *imu);
+EXPORT int postpos(gtime_t ts, gtime_t te, double ti, double tu,
+                   const prcopt_t *popt, const solopt_t *sopt,
+                   const filopt_t *fopt, char **infile, int n, char *outfile,
+                   const char *rov, const char *base);
 /* precise point positioning -------------------------------------------------*/
 EXPORT void pppos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav);
 EXPORT int pppnx(const prcopt_t *opt);
@@ -2987,11 +3000,17 @@ EXPORT int ant2inins(gtime_t time,const double *rr,const double *vr,
                      const insopt_t *opt,const imu_t *imu,insstate_t *ins,int *iimu);
 EXPORT void propinss(insstate_t *ins,const insopt_t *opt,double dt,
                      double *x,double *P);
+EXPORT void getPhi(const insopt_t *opt,const insstate_t *ins,double *Phi);
+EXPORT void getQn(const insopt_t *opt,const insstate_t *ins,double *Qn);
 EXPORT void getP0(const insopt_t *opt,double *P0);
 EXPORT int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
                    gmea_t *gnss, int upd);
 EXPORT int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
                    const imud_t *imu,rtk_t *rtk,insstate_t *ins,int upd);
+
+EXPORT int lcigposrb(const insopt_t *opt, const imud_t *data, insstate_t *ins,
+                     gmea_t *gnss, int upd);
+
 EXPORT int doppler(const obsd_t *obs,int n,const nav_t *nav,const prcopt_t *opt,insstate_t *ins);
 EXPORT void initlc(insopt_t *insopt, insstate_t *ins);
 EXPORT void freelc(insstate_t *ins);
@@ -3015,6 +3034,7 @@ EXPORT int  alignvnex(const double *imu,int n,double dt,const double *q0,
                       const ins_align_t *pas,double *att0,double *qo);
 EXPORT int fine_align_lym(insstate_t *ins,const imud_t *data,int n,const insopt_t *opt);
 EXPORT int readimu(const char *file, imu_t *imu,int decfmt,int format,int coor,int valfmt);
+EXPORT int readstim300(const char *file,imu_t *imu);
 EXPORT int sortimudata(imu_t *imu);
 EXPORT void adjimudata(const prcopt_t *opt,imu_t *imu);
 EXPORT void adjustimu(const prcopt_t *opt,imud_t *imu);
@@ -3042,8 +3062,8 @@ EXPORT void ins2sol(insstate_t *ins,const insopt_t *opt,sol_t *sol);
 EXPORT void rvec2quat(const double *rvec,double *q);
 EXPORT void dcm2rot(const double *C,double *rv);
 EXPORT void getvn(const insstate_t *ins,double *vn);
-EXPORT void update_ins_state_n(insstate_t *ins);
-EXPORT void update_ins_state_e(insstate_t *ins);
+EXPORT void updinsn(insstate_t *ins);
+EXPORT void updinse(insstate_t *ins);
 EXPORT int insinitdualant(rtksvr_t *svr,const pose_meas_t *pose,const sol_t *sol,
                           const imud_t *imu);
 EXPORT int insinitgiven(rtksvr_t *svr,const imud_t *imu);
@@ -3139,6 +3159,9 @@ EXPORT void rpy2c(const double *rpy,double *C);
 EXPORT void c2rpy(const double *C,double *rpy);
 EXPORT void addlie(const double *a1,const double *a2,double *a);
 EXPORT void so3_jac(const double *phi,double *Jr,double *Jl);
+EXPORT void so3jac(const double *phi,double *Jri);
+extern void so3exp(const double *phi,double *C);
+extern void so3log(const double *C,double *phi);
 
 /* se3 lie group functions----------------------------------------------------*/
 EXPORT void se3_log(const double *R,const double *t,double *omega);
@@ -3157,7 +3180,9 @@ EXPORT int lcfbsm(const imu_t *imu,const gsof_data_t *pos,const prcopt_t *popt,
                   const solopt_t *solopt,int port,const char *file);
 EXPORT void set_fwd_soltmp_file(const char *file);
 EXPORT void set_fwdtmp_file(const char *file);
-EXPORT int bckup_ins_info(insstate_t *ins,const insopt_t *opt,int type);
+EXPORT int bckupinsinfo(insstate_t *ins, const insopt_t *opt, int type);
+EXPORT int tcpostpos(prcopt_t *popt, const solopt_t *solopt, int port,
+                     const char *outfile, char** infiles);
 
 /* estimated states interface-------------------------------------------------*/
 EXPORT int xnP (const insopt_t *opt);
@@ -3288,6 +3313,7 @@ EXPORT int outofview(const track_t *track,const voopt_t *opt,
 EXPORT void inittrackimgbuf(const voopt_t *opt);
 EXPORT void freetrackimgbuf();
 EXPORT img_t* getimgdata(gtime_t time);
+EXPORT int getgmsmatches(const voopt_t *opt,match_set *match,const img_t *Ip,const img_t *Ic);
 
 /* pnp pose estimate function------------------------------------------------*/
 EXPORT int p3pthree(const feature *feats,int nf,double *xp,int np,
@@ -3309,20 +3335,27 @@ EXPORT int undistortradtan(const cam_t *cam,const double *in,double *out,
                            double *J);
 
 /* vo aid to ins/gnss coupled functions---------------------------------------*/
-EXPORT int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
-                   const img_t *img,int flag);
-EXPORT int voigposlc(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
-                     const img_t *img,int flag);
+EXPORT int voigposmsckf(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
+                        const img_t *img,int flag);
+
 EXPORT void initvoaid(insopt_t *opt);
-EXPORT void initvoaidlc(insopt_t *opt);
 EXPORT void freevoaid();
 EXPORT void freevoaidlc();
+EXPORT void initvoaidlc(insopt_t *opt);
 EXPORT int kalibrrosbag(const char *datfile,const char *imufile,
                         const char *imgdir,
                         const char *output);
-
+EXPORT int voigposlc(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
+                     const img_t *img,int flag);
 EXPORT void updcamposevar(const insopt_t *opt,const double *var,vostate_t *vo);
 EXPORT void initcamposevar(const insopt_t *opt,insstate_t *ins,vostate_t *vo);
+EXPORT int updatecamera(insstate_t *ins,const insopt_t *opt,const double *dT,gtime_t time);
+EXPORT void ins2camera(const insstate_t *ins,double *rc,double *Cce);
+EXPORT void camera2ins(const double *Cce,const double *rc,const double *Cbc,
+                       const double *lbc,double *Cbe,double *re);
+EXPORT int initcampose(insstate_t *ins,const insopt_t *opt);
+EXPORT int zvucam(const insopt_t *opt,const double *dT,int status,const imud_t *imu,
+                  gtime_t tc,insstate_t *ins);
 
 EXPORT void rt2tf(const double *R,const double *t,double *T);
 EXPORT void tf2rt(const double *T,double *R,double *t);
@@ -3332,7 +3365,10 @@ EXPORT int predictfeat(const double *R,const double *t,const double *K,
 EXPORT int inroi(const float u,const float v,const matchopt_t *opt);
 EXPORT int fastfeats(const unsigned char *img,int img_w,int img_h,short barrier,
                      const matchopt_t *opt,int *uv,int *num);
-
+EXPORT int solveRt(const voopt_t *opt,const insstate_t *ins,const match_set_t *mf,
+                   double *dT,double *ratio);
+EXPORT int solveRt5p(const voopt_t *opt,const insstate_t *ins,const match_set_t *mf,
+                     double *dT,double *ratio);
 /* ins-gnss-vo coupled post-processing----------------------------------------*/
 EXPORT int igvopostpos(const gtime_t ts, gtime_t te, double ti, double tu,
                        const prcopt_t *popt, const solopt_t *sopt,
@@ -3377,6 +3413,10 @@ EXPORT void vt_closelog(vt_t *vt);
 /* interface for opencv library-----------------------------------------------*/
 EXPORT void dipsplyimg(const img_t *img);
 EXPORT void drawalltrack(const track_t *track);
+
+EXPORT int estvo(const voopt_t *opt,const img_t *img,double *dTr,double *ratio);
+EXPORT void resetmonoa();
+EXPORT void freemonoa();
 
 #ifdef __cplusplus
 }

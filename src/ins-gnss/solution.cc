@@ -44,6 +44,7 @@
 *-----------------------------------------------------------------------------*/
 #include <ctype.h>
 #include <carvig.h>
+#include <include/carvig.h>
 
 /* constants and macros ------------------------------------------------------*/
 #define MAXFIELD   64           /* max number of fields in a record */
@@ -1494,6 +1495,9 @@ static int outins(unsigned char *buff,const sol_t *sol,const char *s,
     char *p=(char *)buff;
     double pos[3],Pp[9],Pa[9],Pv[9],Qv[9],Qp[9],venu[3];
     double dms1[3],dms2[3];
+    double enu[3],dr[3];
+    double Cc[9],rc[3],Cne[9],rpy[3],Cnb[9];
+    int i;
 
     trace(3,"outins: \n");
 
@@ -1544,7 +1548,7 @@ static int outins(unsigned char *buff,const sol_t *sol,const char *s,
         }
     }
     if (opt->outatt) { /* output attitude */
-        p+=sprintf(p,"%s%10.4lf%s%10.4lf%s%10.4lf%s%10.4lf%s%10.4lf%s%10.4lf",
+        p+=sprintf(p,"%s%10.6lf%s%10.6lf%s%10.6lf%s%10.6lf%s%10.6lf%s%10.6lf",
                    sep,sol->att[0]*R2D,sep,sol->att[1]*R2D,sep,NORMANG(sol->att[2]*R2D),
                    sep,SQRT(sol->qa[0])*R2D,sep,SQRT(sol->qa[1])*R2D,sep,SQRT(sol->qa[2])*R2D);
     }
@@ -1575,6 +1579,42 @@ static int outins(unsigned char *buff,const sol_t *sol,const char *s,
         p+=sprintf(p,"%s%12.6lf%s%12.6lf%s%12.6lf%s%12.6lf%s%12.6lf%s%12.6lf",
                    sep,sol->imu.gyro[0]*R2D,sep,sol->imu.gyro[1]*R2D,sep,sol->imu.gyro[2]*R2D,
                    sep,sol->imu.accl[0],sep,sol->imu.accl[1],sep,sol->imu.accl[2]);
+    }
+    if (opt->outMa) {
+        p+=sprintf(p," %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e",
+                   sep,sol->Ma[0],sep,sol->Ma[1],sep,sol->Ma[2],
+                   sep,sol->Ma[3],sep,sol->Ma[4],sep,sol->Ma[5],
+                   sep,sol->Ma[6],sep,sol->Ma[7],sep,sol->Ma[8]);
+    }
+    if (opt->outMg) {
+        p+=sprintf(p," %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e  %s%12.6e",
+                   sep,sol->Mg[0],sep,sol->Mg[1],sep,sol->Mg[2],
+                   sep,sol->Mg[3],sep,sol->Mg[4],sep,sol->Mg[5],
+                   sep,sol->Mg[6],sep,sol->Mg[7],sep,sol->Mg[8]);
+    }
+    if (opt->outenu) {
+        for (i=0;i<3;i++) dr[i]=sol->rr[i]-sol->oxyz[i];
+        ecef2pos(sol->oxyz,pos);
+        ecef2enu(pos,dr,enu);
+
+        p+=sprintf(p,"%s%10.6lf %s%10.6lf %s%10.6lf",sep,enu[0],sep,enu[1],sep,enu[2]);
+    }
+    if (opt->outvo) {
+        camera2ins(sol->vo.Cce,sol->vo.rc,sol->vo.Cbc,sol->vo.lbc,Cc,rc);
+        ecef2pos(rc,pos);
+        ned2xyz(pos,Cne);
+        matmul3("TN",Cc,Cne,Cnb);
+        dcm2rpy(Cnb,rpy);
+
+        for (i=0;i<3;i++) dr[i]=rc[i]-sol->oxyz[i];
+        ecef2pos(sol->oxyz,pos);
+        ecef2enu(pos,dr,enu);
+
+        p+=sprintf(p," %s%10.6lf",sep,time2gpst(sol->vo.time,NULL));
+        p+=sprintf(p," %s%d",sep,sol->vo.status);
+        p+=sprintf(p," %s%14.4lf %s%14.4lf %s%14.4lf",sep,rc[0],sep,rc[1],sep,rc[2]);
+        p+=sprintf(p," %s%10.6lf %s%10.6lf %s%10.6lf",sep,rpy[0]*R2D,sep,rpy[1]*R2D,sep,NORMANG(rpy[2]*R2D));
+        p+=sprintf(p," %s%10.6lf %s%10.6lf %s%10.6lf",sep,enu[0],sep,enu[1],sep,enu[2]);
     }
     if (outmoni) p+=sprintf(p," %s",INSPOSSTR);
     p+=sprintf(p,"\n");

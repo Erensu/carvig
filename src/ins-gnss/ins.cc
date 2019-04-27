@@ -409,7 +409,7 @@ extern void pregrav(const double *pos, double *g)
 
     /* calculate distance from center of the earth */
     if ((r=norm(pos,3))<RE_WGS84/2.0) {
-        g[0]=g[1]=0.0; g[2]=9.81;
+        g[0]=g[1]=0.0; g[2]=-9.81;
         return;
     }
     z=-MU/(r*r*r);
@@ -621,7 +621,9 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     for (i=0;i<3;i++) fb[i]=ins->fb[i]+dvs[i]/dt;
     matmul3v("N",Cbe,fb,fe);
     if (insopt->gravityex) {
-        pregrav(ins->re,ge); /* precious gravity model */
+
+        /* precious gravity model */
+        pregrav(ins->re,ge);
     }
     else gravity(ins->re,ge); /* common gravity model */
 
@@ -633,7 +635,7 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
         ins->re[i]+=ins->ve[i]*dt+ins->ae[i]/2.0*dt*dt;
     }
     /* update ins state in n-frame */
-    update_ins_state_n(ins);
+    updinsn(ins);
 
     ins->dt=timediff(data->time,ins->time);
     ins->ptime=ins->time;
@@ -1039,7 +1041,7 @@ extern void getvn(const insstate_t *ins,double *vn)
     matmul("TN",3,1,3,1.0,C,ins->ve,0.0,vn); 
 }
 /* update ins states in n-frame----------------------------------------------*/
-extern void update_ins_state_n(insstate_t *ins)
+extern void updinsn(insstate_t *ins)
 {
     double Cne[9];
 
@@ -1055,7 +1057,7 @@ extern void update_ins_state_n(insstate_t *ins)
     matmul("TN",3,1,3,1.0,Cne,ins->ae,0.0,ins->an);
 }
 /* update ins states in e-frame----------------------------------------------*/
-extern void update_ins_state_e(insstate_t *ins)
+extern void updinse(insstate_t *ins)
 {
     double Cne[9];
 
@@ -1167,7 +1169,7 @@ extern int updateinsn(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     trace(5,"ins(-)=\n"); traceins(5,ins);
 
     /* update ins state in n-frame */
-    update_ins_state_n(ins);
+    updinsn(ins);
 
     /* save precious epoch ins states */
     savepins(ins,data);
@@ -1236,7 +1238,7 @@ extern int updateinsn(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     ins->rn[2]-=vmid[2]*dt;
 
     /* update ins states in e-frame */
-    update_ins_state_e(ins);
+    updinse(ins);
 
     ins->dt=dt;
     ins->ptime=ins->time;
@@ -1382,5 +1384,29 @@ extern int simimumeas(double *fb,double *omgb,const imu_err_t *err,double dt)
         fb[i]=fb0[i]+na[i]+err->ba[i];
     }
     return 1;
+}
+/* trace ins states ----------------------------------------------------------*/
+extern void traceinss(int level, const double *Cbe,const double *re,
+                      const double *ve,gtime_t time)
+{
+    double pos[3],Cne[9],Cnb[9],rpy[3],vel[3];
+    char s[64];
+    time2str(time,s,3);
+    trace(level,"time  =%s\n",s);
+    ecef2pos(re,pos);
+    ned2xyz(pos,Cne);
+    matmul3("TN",Cbe,Cne,Cnb);
+    dcm2rpy(Cnb,rpy);
+    trace(level,"attn =%8.5f %8.5f %8.5f\n",rpy[0]*R2D,rpy[1]*R2D,rpy[2]*R2D);
+
+    if (ve) {
+        matmul3v("T",Cne,ve,vel);
+        trace(level,"veln =%8.5f %8.5f %8.5f\n",
+              vel[0],vel[1],vel[2]); /* n-frame */
+
+        matmul3v("T",Cbe,ve,vel);
+        trace(level,"velb =%8.5f %8.5f %8.5f\n",
+              vel[0],vel[1],vel[2]); /* b-frame */
+    }
 }
 

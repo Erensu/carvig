@@ -50,8 +50,8 @@ public:
 
 
 // Input should be a vector of n 2D points or a Nx2 matrix
-Mat findEssentialMat( InputArray _points1, InputArray _points2, double focal, Point2d pp, 
-					int method, double prob, double threshold, OutputArray _mask) 
+Mat findEssentialMat5p( InputArray _points1, InputArray _points2, double focal, Point2d pp,
+					    int method, double prob, double threshold, OutputArray _mask)
 {
 	Mat points1, points2; 
 	_points1.getMat().copyTo(points1); 
@@ -69,10 +69,10 @@ Mat findEssentialMat( InputArray _points1, InputArray _points2, double focal, Po
 	points1.convertTo(points1, CV_64F); 
 	points2.convertTo(points2, CV_64F); 
 
-	points1.col(0) = (points1.col(0) - pp.x) / focal; 
-	points2.col(0) = (points2.col(0) - pp.x) / focal; 
-	points1.col(1) = (points1.col(1) - pp.y) / focal; 
-	points2.col(1) = (points2.col(1) - pp.y) / focal; 
+	points1.col(0) = (points1.col(0) - pp.x) / focal;
+	points2.col(0) = (points2.col(0) - pp.x) / focal;
+	points1.col(1) = (points1.col(1) - pp.y) / focal;
+	points2.col(1) = (points2.col(1) - pp.y) / focal;
 	
 	// Reshape data to fit opencv ransac function
 	points1 = points1.reshape(2, 1); 
@@ -87,7 +87,7 @@ Mat findEssentialMat( InputArray _points1, InputArray _points2, double focal, Po
 	CvMat* tempMask = cvCreateMat(1, npoints, CV_8U); 
 	
 	assert(npoints >= 5); 
-	threshold /= focal; 
+	threshold /= focal;
     int count = 1; 
     if (npoints == 5)
     {
@@ -111,15 +111,13 @@ Mat findEssentialMat( InputArray _points1, InputArray _points2, double focal, Po
     	Mat mask = _mask.getMat(); 
     	Mat(tempMask).copyTo(mask); 
     }
-
-
 	return E; 
 
 }
 
-int recoverPose( const Mat & E, InputArray _points1, InputArray _points2, Mat & _R, Mat & _t, 
-				 double focal, Point2d pp,
-				 InputOutputArray _mask)
+int recoverPose5p( const Mat & E, InputArray _points1, InputArray _points2, Mat & _R, Mat & _t,
+				   double focal, Point2d pp,
+				   InputOutputArray _mask)
 {
 	Mat points1, points2; 
 	_points1.getMat().copyTo(points1); 
@@ -136,16 +134,16 @@ int recoverPose( const Mat & E, InputArray _points1, InputArray _points2, Mat & 
 	points1.convertTo(points1, CV_64F); 
 	points2.convertTo(points2, CV_64F); 
 
-	points1.col(0) = (points1.col(0) - pp.x) / focal; 
-	points2.col(0) = (points2.col(0) - pp.x) / focal; 
-	points1.col(1) = (points1.col(1) - pp.y) / focal; 
-	points2.col(1) = (points2.col(1) - pp.y) / focal; 
+	points1.col(0) = (points1.col(0) - pp.x) / focal;
+	points2.col(0) = (points2.col(0) - pp.x) / focal;
+	points1.col(1) = (points1.col(1) - pp.y) / focal;
+	points2.col(1) = (points2.col(1) - pp.y) / focal;
 
 	points1 = points1.t(); 
 	points2 = points2.t(); 
 	
 	Mat R1, R2, t; 
-	decomposeEssentialMat(E, R1, R2, t); 
+	decomposeEssentialMat5p(E, R1, R2, t);
 	Mat P0 = Mat::eye(3, 4, R1.type()); 
 	Mat P1(3, 4, R1.type()), P2(3, 4, R1.type()), P3(3, 4, R1.type()), P4(3, 4, R1.type()); 
 	P1(Range::all(), Range(0, 3)) = R1 * 1.0; P1.col(3) = t * 1.0; 
@@ -249,7 +247,7 @@ int recoverPose( const Mat & E, InputArray _points1, InputArray _points2, Mat & 
 
 }
 
-void decomposeEssentialMat( const Mat & E, Mat & R1, Mat & R2, Mat & t ) 
+void decomposeEssentialMat5p( const Mat & E, Mat & R1, Mat & R2, Mat & t )
 {
 	assert(E.cols == 3 && E.rows == 3); 
 	Mat D, U, Vt; 

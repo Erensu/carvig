@@ -31,7 +31,8 @@ include_directories(
 )
 # Test
 add_executable(test_m39_mix_data test_m39_mix_data.cc)
-target_link_libraries(test_m39_mix_data carvig)
+target_link_libraries(test_m39_mix_data carvig ${OpenCV_LIBS}
+                      five-point-nister)
 
 add_executable(test_vo_mono test_vo_mono.cc)
 target_link_libraries(test_vo_mono carvig)
@@ -67,7 +68,12 @@ add_executable(test_qr test_qr.cc)
 target_link_libraries(test_qr carvig ${OpenCV_LIBS})
 
 add_executable(test_ins_gnss_vo_sim test_ins_gnss_vo_sim.cc)
-target_link_libraries(test_ins_gnss_vo_sim carvig ${OpenCV_LIBS})
+target_link_libraries(test_ins_gnss_vo_sim carvig ${OpenCV_LIBS}
+                      five-point-nister viso)
+
+add_executable(test_deltameas test_deltameas.cc)
+target_link_libraries(test_deltameas carvig ${OpenCV_LIBS}
+                      five-point-nister viso)
 
 
 

@@ -106,8 +106,6 @@ static int decode_imu_data(raw_t *raw)
     static double sow=0.0,timu=0.0;
     gtime_t t0;
 
-    trace(3,"decode_imu_data:\n");
-
     raw->imut.n=0;
 
     /* decode GPS sow (s) */
@@ -140,8 +138,6 @@ static int decode_imu_data(raw_t *raw)
 /* decode M39 IMU GI310 data ------------------------------------------------*/
 static int decode_imu_m39(raw_t *raw, unsigned char data)
 {
-    trace(3,"decode_imu_m39:\n");
-
     raw->buff[raw->nbyte++]=data;
 
     if (raw->nbyte<2) return 0; /* synchronize frame */

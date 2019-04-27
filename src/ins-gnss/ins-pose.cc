@@ -1,18 +1,19 @@
 /*------------------------------------------------------------------------------
-* ins-pose.cc : pose measurement aid for ins navigation functions
-*
-* reference :
-*    [1] P.D.Groves, Principles of GNSS, Intertial, and Multisensor Integrated
-*        Navigation System, Artech House, 2008
-*    [2] Tedaldi D, Pretto A, Menegatti E. A robust and easy to implement method
-*        for IMU calibration without external equipments,2014.
-*    [3] Skog I, Handel P. Effects of time synchronization errors in GNSS-aided
-*        INS 2008.
-*    [4] Shin E H. Accuracy Improvement of Low Cost INS/GPS for Land Applications
-*
-* version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
-* history : 2017/11/13 1.0 new
-*-----------------------------------------------------------------------------*/
+ * ins-pose.cc : pose measurement aid for ins navigation functions
+ *
+ * reference :
+ *    [1] P.D.Groves, Principles of GNSS, Intertial, and Multisensor Integrated
+ *        Navigation System, Artech House, 2008
+ *    [2] Tedaldi D, Pretto A, Menegatti E. A robust and easy to implement method
+ *        for IMU calibration without external equipments,2014.
+ *    [3] Skog I, Handel P. Effects of time synchronization errors in GNSS-aided
+ *        INS 2008.
+ *    [4] Shin E H. Accuracy Improvement of Low Cost INS/GPS for Land Applications
+ *    [5] Timothy D. Barfoot. State Estimation for Robotics.
+ *
+ * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
+ * history : 2017/11/13 1.0 new
+ *-----------------------------------------------------------------------------*/
 #include "carvig.h"
 
 /* constants ----------------------------------------------------------------*/
@@ -215,7 +216,7 @@ extern void initcamposevar(const insopt_t *opt,insstate_t *ins,vostate_t *vo)
             Pins[i+3*j]=ins->P[(xiA(opt)+i)+3*(xiA(opt)+j)];
         }
     }
-    matmul("NN",3,3,3,1.0,ins->Cbe,vo->Ccb,0.0,Cce);
+    matmul("NN",3,3,3,1.0,ins->Cbe,vo->Cbc,0.0,Cce);
     so3_log(Cce,phi,NULL);
 
     so3_jac(phi,NULL,Jl);
@@ -470,6 +471,7 @@ exit:
 static int posecamfilt(const insopt_t *opt,const pose_meas_t *data,
                        insstate_t *ins,double dt)
 {
+#if 0
     double *v,*x,*H,*R,*P,phi0[3],phi[3],Cce[9],r[3],S[9],T[9];
     double dphida[9],dphidma[9],Cbe[9],phi1[3];
     int i,j,nv=0,nx=ins->nx,ia,na,im=0,nm=0;
@@ -571,6 +573,7 @@ static int posecamfilt(const insopt_t *opt,const pose_meas_t *data,
     free(x); free(P); free(v);
     free(H); free(R);
     return info;
+#endif
 }
 /* external pose measurement to update ins navigation------------------------*/
 extern int posefusion(const insopt_t *opt,const pose_meas_t *data,

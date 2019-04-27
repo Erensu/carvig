@@ -10,12 +10,11 @@
 
 /* constants ----------------------------------------------------------------*/
 #define MIN_INT_RESET   30000      /* mininum interval of reset command (ms) */
-#define DTTOLM          0.1        /* threshold of rover and base observation data */
+#define DTTOLM          0.5        /* threshold of rover and base observation data */
 #define REALTIME        0          /* real time process rover observation data */
-#define MAXTIMEDIFF     0.1        /* max time difference for suspend input stream */
-#define OUTSOLFRQ       5          /* frequency of output ins solutions */
-#define ONLY_COUPLED_VO 1          /* only coupled with imu and vision measurement data */
-#define COUPLED_VO_LC   1          /* loosely coupled with vision measurement data */
+#define MAXTIMEDIFF     0.0        /* max time difference for suspend input stream */
+#define OUTSOLFRQ       100        /* frequency of output ins solutions */
+#define ONLY_COUPLED_VO 0          /* only coupled with imu and vision measurement data */
 
 #define NS(i,j,max)     ((((j)-1)%(max)-(i))<0?(((j)-1)%(max)-(i)+(max)):(((j)-1)%(max)-(i)))
 #define NE(i,j,max)     MAX(0,(((i)-(j))<0?((i)-(j)+(max)):((i)-(j))))
@@ -90,7 +89,7 @@ static void writesol(rtksvr_t *svr, int index)
     }
     /* output solution to monitor port */
     const solopt_t *psolopt=NULL;
-    if (opt->mode>=PMODE_INS_UPDATE&&opt->mode<=PMODE_INS_TGNSS) {
+    if (opt->mode>=PMODE_INS_UPDATE&&opt->mode<=PMODE_INS_TGNSS||opt->mode==PMODE_INS_LGNSS_VO) {
         psolopt=&solopt_ins_default;
     }
     else {
@@ -100,7 +99,7 @@ static void writesol(rtksvr_t *svr, int index)
         n=outsols(buff,&svr->rtk.sol,svr->rtk.rb,psolopt,opt->mode>=PMODE_INS_UPDATE?&svr->rtk.ins:NULL,
                   &svr->rtk.opt.insopt,1);
 
-        if (opt->mode>=PMODE_INS_UPDATE&&opt->mode<=PMODE_INS_TGNSS) {
+        if (opt->mode>=PMODE_INS_UPDATE&&opt->mode<=PMODE_INS_TGNSS||opt->mode==PMODE_INS_LGNSS_VO) {
             if (c++>OUTSOLFRQ) {
                 strwrite(svr->moni,buff,n); c=0;
             }
@@ -435,7 +434,10 @@ static void updateimg(rtksvr_t *svr, img_t *img ,int iimg)
     svr->img[iimg].h=img->h;
     svr->img[iimg].w=img->w;
 
+    /* input image raw data */
     memcpy(svr->img[iimg].data,img->data,sizeof(unsigned char)*img->w*img->h);
+
+    /* input detected feature data */
     if (img->feat) {
         feature *current,*tmp;
         HASH_ITER(hh,svr->img[iimg].feat,current,tmp) {
@@ -448,7 +450,8 @@ static void updateimg(rtksvr_t *svr, img_t *img ,int iimg)
         HASH_ITER(hh,img->feat,current,tmp) {
 
             /* add feature point */
-            hash_addfeat(&svr->img[iimg].feat,current->uid,current->u,current->v,current->time);
+            hash_addfeat(&svr->img[iimg].feat,current->uid,current->u,current->v,
+                         current->time);
         }
     }
     hash_rmimgfeat(&img->feat);
@@ -1010,7 +1013,8 @@ static void outrslt(rtksvr_t *svr,gmea_t *gm,int tick,int index)
 
     /* update ins solution status */
     if (ins->stat==INSS_LCUD&&gm) {
-        ins->ns=gm->ns; ins->gstat=gm->stat;
+        ins->ns=gm->ns;
+        ins->gstat=gm->stat;
     }
     else if (ins->stat==INSS_MECH) {
         ins->ns=0;
@@ -1387,7 +1391,6 @@ static void *rtksvrthread(void *arg)
      * fobs[0]: rov, fobs[1]:  base, fobs[2]: corr, fobs[3]: solution,
      * fobs[4]: imu, fobs[5]: image, fobs[6]: pose
      * --------------------------------------------------------------*/
-    
     tracet(3,"rtksvrthread:\n");
 
     svr->state=1;
@@ -1405,17 +1408,18 @@ static void *rtksvrthread(void *arg)
         fprintf(stderr,"malloc error\n");
         return NULL;
     }
+    /* ---------------------------------------------------------------
+     * @index  index of input stream
+     * index=0: rover,    index=1: base, index=2: corr
+     * index=3: solution, index=4: imu
+     * index=5: image,    index=6: pose
+     * ------------------------------------------------------------*/
     for (cycle=0;svr->state;cycle++) {
         tick=tickget();
         
         if (svr->pause ) continue;
         if (svr->reinit) init=0;
 
-        /* @index  index of input stream---------------------------------
-         * index=0: rover,    index=1: base, index=2: corr
-         * index=3: solution, index=4: imu
-         * index=5: image,    index=6: pose
-         * ------------------------------------------------------------*/
         for (i=0;i<7;i++) {
             p=svr->buff[i]+svr->nb[i]; q=svr->buff[i]+svr->buffsize;
 
@@ -1557,6 +1561,7 @@ static void *rtksvrthread(void *arg)
                         svr->rtk.ins.stat=INSS_REINIT;
                         svr->reinit=0;
                     }
+                    matcpy(svr->rtk.sol.oxyz,ins->oxyz,1,3);
                     init=1;
                     tracet(3,"ins initial ok\n");
                 }
@@ -1567,8 +1572,11 @@ static void *rtksvrthread(void *arg)
             }
             /* loosely coupled position */
             rtksvrlock(svr);
+#if COPLED_RB
+            lcigposrb(iopt,imus.data+i,ins,&gnss,j);
+#else
             lcigpos(iopt,imus.data+i,ins,&gnss,j);
-
+#endif
             /* motion constraint update */
             motion(iopt,imuz,ins,&imus.data[i],ws);
 
@@ -1697,6 +1705,9 @@ static void *rtksvrthread(void *arg)
                             svr->rtk.ins.stat=INSS_REINIT;
                             svr->reinit=0;
                         }
+                        matcpy(svr->rtk.sol.oxyz,ins->oxyz,1,3);
+                        matcpy(svr->rtk.sol.vo.Cbc,ins->Cbc,3,3);
+                        matcpy(svr->rtk.sol.vo.lbc,ins->lbc,3,1);
                         init=1;
                         tracet(3,"ins initial ok\n");
                     }
@@ -1705,9 +1716,7 @@ static void *rtksvrthread(void *arg)
                         continue;
                     }
                 }
-#if !ONLY_COUPLED_VO
-                j=INSUPD_MEAS;
-#else
+#if ONLY_COUPLED_VO
                 j=INSUPD_TIME;
 #endif
                 rtksvrlock(svr);
@@ -1732,13 +1741,8 @@ static void *rtksvrthread(void *arg)
                 if (iopt->magh) {
                     magnetometer(ins,iopt,&mag);
                 }
-#if COUPLED_VO_LC
-                /* coupled with vo loosely */
-                voigposlc(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt));
-#else
                 /* coupled with vo */
-                voigpos(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt));
-#endif
+                voigposlc(iopt,ins,&imus.data[i],*imgt,inputimg(svr,imus.data[i].time,imgt));
                 rtksvrunlock(svr);
 
                 /* output results */

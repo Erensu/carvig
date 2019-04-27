@@ -13,7 +13,6 @@
 #include <emmintrin.h>
 #include <pmmintrin.h>
 #include <triangle.h>
-#include <include/carvig.h>
 
 /* constants ----------------------------------------------------------------*/
 #define add_data_func_delc(data_type,add_data_type)            \
@@ -37,7 +36,7 @@
     }                                                          \
 
 #define TRACR_FEAT_POINTS    0       /* output feature points for debugs */
-#define MATCH_RATIO          3.0     /* ratio of min-cost to second-min-cost */
+#define MATCH_RATIO          5.0     /* ratio of min-cost to second-min-cost */
 #define USE_NEW_BUCKET       1       /* use new bucket feature exctract method */
 #define CHK_MATCH_ROI        1       /* check match ROI options */
 #define FAST_CORNERS         0       /* FAST corner detect */
@@ -1828,6 +1827,7 @@ extern int matchfeats(match_t *pmatch,const img_t *img)
 
     trace(3,"match: time=%s\n",time_str(img->time,4));
 
+    /* ins-gnss-vo simulator data */
     if (img->feat) {
         pmatch->pt  =pmatch->time; 
         pmatch->time=img->time; 
@@ -1862,7 +1862,8 @@ extern int matchfeats(match_t *pmatch,const img_t *img)
 #if USE_NEW_BUCKET
     /* bucket features extract */
     buketfeatnew(&pmatch->opt,&pmatch->mp_dense,&pmatch->mp_bucket,
-                 pmatch->opt.bucket.nmax,index,num,nindex,nnum);
+                 pmatch->opt.bucket.nmax,
+                 index,num,nindex,nnum);
 #else
     /* bucket features extract */
     bucketfeat(&pmatch->opt,&pmatch->mp_dense,&pmatch->mp_bucket,

@@ -29,14 +29,14 @@
 #include <opencv2/calib3d/calib3d.hpp>
 using namespace cv; 
 
-Mat findEssentialMat(InputArray points1, InputArray points2, double focal = 1.0,
-					 Point2d pp = Point2d(0, 0),
-					 int method = CV_RANSAC,
-					 double prob = 0.999, double threshold = 1, OutputArray mask = noArray() );
+Mat findEssentialMat5p(InputArray points1, InputArray points2, double focal = 1.0,
+				       Point2d pp = Point2d(0, 0),
+					   int method = CV_RANSAC,
+					   double prob = 0.999, double threshold = 1, OutputArray mask = noArray() );
 
-void decomposeEssentialMat(const Mat & E, Mat & R1, Mat & R2, Mat & t);
+void decomposeEssentialMat5p(const Mat & E, Mat & R1, Mat & R2, Mat & t);
 
-int recoverPose(const Mat & E, InputArray points1, InputArray points2, Mat & R, Mat & t,
-				double focal = 1.0, Point2d pp = Point2d(0, 0),
-				InputOutputArray mask = noArray());
+int recoverPose5p(const Mat & E, InputArray points1, InputArray points2, Mat & R, Mat & t,
+				      double focal = 1.0, Point2d pp = Point2d(0, 0),
+				      InputOutputArray mask = noArray());
 #endif

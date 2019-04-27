@@ -67,7 +67,7 @@ typedef struct {               /* frame data type*/
 } frame_t;
 
 /* constants-------------------------------------------------------------------*/
-#define VAR_POS                     SQR(0.1)  /* variance of GPS position measurement data */
+#define VAR_POS                     SQR(0.01) /* variance of GPS position measurement data */
 #define VAR_FEAT                    SQR(3.0)  /* variance of feature point measurement data */
 #define MIN_TRACK_LEN               5         /* min length of tracking data */
 #define MAX_TRACK_LEN               20        /* max length of tracking data */
@@ -179,8 +179,8 @@ static int randfeatpos(gtime_t time,const cam_t *cam,double *fpos,double *uv)
         xyz[i]=fpos[i]/fpos[2];
     }
 #if 1
-    uv[0]=xyz[0]*cam->K[0]+cam->K[6]+getgaussian(3);
-    uv[1]=xyz[1]*cam->K[4]+cam->K[7]+getgaussian(3);
+    uv[0]=xyz[0]*cam->K[0]+cam->K[6]+getgaussian(4);
+    uv[1]=xyz[1]*cam->K[4]+cam->K[7]+getgaussian(4);
 #else
     uv[0]=xyz[0]*cam->K[0]+cam->K[6];
     uv[1]=xyz[1]*cam->K[4]+cam->K[7];
@@ -485,7 +485,7 @@ extern int generatepath(const char *file,const cam_t *cam,const imu_err_t *err,
 
             /* add noise to gps position */
             for (j=0;j<3;j++) {
-                var[j]=SQRT(VAR_POS)+getgaussian(0.05);
+                var[j]=SQRT(VAR_POS)+getgaussian(0.005);
                 gps[j]+=getgaussian(SQRT(VAR_POS));
             }
             /* write GPS data to file */

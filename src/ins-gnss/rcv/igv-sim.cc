@@ -4,7 +4,6 @@
  * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
  * history : 2019/01/08 1.0 new
  *-----------------------------------------------------------------------------*/
-#include <include/carvig.h>
 #include "carvig.h"
 
 /* constants/macros ---------------------------------------------------------*/
@@ -156,22 +155,35 @@ static void hash_rmframe(img_t **hash)
     }
     *hash=NULL;
 }
+/* delete hash table-----------------------------------------------------------*/
+static void hash_rmimgfeat(feature **ht)
+{
+    struct feature *current,*tmp;
+
+    HASH_ITER(hh,*ht,current,tmp) {
+        HASH_DEL(*ht,current);  /* delete; users advances to next */
+        free(current);          /* optional- if you want to free  */
+    }
+    *ht=NULL; /* delete */
+}
 /* read feature point measurement data from file------------------------------*/
 static int readfeatfile(FILE *fp,img_t **hashimg,int nfmax)
 {
+    feature *fcurrent,*ftmp;
     raw_t raw={0};
     int flag,count=0;
 
     init_raw(&raw,STRFMT_IGVSIM_FEAT);
     while (true) {
         flag=input_igvsim_featf(&raw,fp);
-        if (flag==-1) break;
+        if (flag==-2) break;
 
         if (flag==11) {
             hash_addframe(&raw.img,hashimg);
             if (++count==nfmax) break;
         }
     }
+    hash_rmimgfeat(&raw.img.feat);
     free_raw(&raw);
     return HASH_COUNT(*hashimg);
 }
@@ -185,8 +197,6 @@ extern int input_igvsim_feat(raw_t *raw, unsigned char data)
     static double time,u,v,xyz[3],pc[3];
     static int fid,nf,count,id;
     gtime_t t0;
-
-    trace(3,"input_igvsim_feat: data=%02x\n",data);
 
     raw->buff[raw->nbyte++]=data;
 
@@ -225,7 +235,7 @@ extern int input_igvsim_featall(raw_t *raw, unsigned char data)
 
     trace(3,"input_igvsim_featall:\n");
 
-    if (input_count++<100) return 0;
+    if (input_count++<10) return 0;
     if (fp_vo==NULL) {
         if (!(fp_vo=fopen(((stream_t*)raw->strp)->path,"r"))) return 0;
     }

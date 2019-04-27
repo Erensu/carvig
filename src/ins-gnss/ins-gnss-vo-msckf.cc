@@ -228,21 +228,6 @@ extern void freevoaid()
     }
     freetrackimgbuf(); return;
 }
-/* resize matrix--------------------------------------------------------------
- * args:    double *A  IO  resized matrix
- *          int n,m    I   size of matrix before resize
- *          int p,q    I   size of matrix after resize
- * return : 1 (ok) or 0 (fail)
- * ---------------------------------------------------------------------------*/
-extern int resize(double **A,int m,int n,int p,int q)
-{
-    trace(3,"resize:\n");
-    double *Ap=zeros(p,q);
-
-    matcpy(Ap,*A,m,n);
-    free(*A); *A=Ap;
-    return 1;
-}
 /* get camera pose using current ins stats------------------------------------*/
 static void campose(const insstate_t *ins,const insopt_t *opt,const img_t *img,cams_t *cams,
                     double *Jp,double *Ja,double *Jv)
@@ -2514,10 +2499,10 @@ static int updateall(insstate_t *ins,const insopt_t *opt,const img_t *img)
  *                              flag-1: feature points measurement update
  * return: status (1: ok, 0: fail)
  * ----------------------------------------------------------------------------*/
-extern int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
-                   const img_t *img,int flag)
+extern int voigposmsckf(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
+                        const img_t *img,int flag)
 {
-    trace(3,"voigpos: time=%s\n",time_str(imu->time,4));
+    trace(3,"voigposmsckf: time=%s\n",time_str(imu->time,4));
 
     switch (flag) {
         case 0: return propagate(&vofilt,ins,opt);
@@ -2529,45 +2514,4 @@ extern int voigpos(const insopt_t *opt,insstate_t *ins,const imud_t *imu,
     if (inss==NULL) inss=ins;
     if (opts==NULL) opts=opt;
     return 0;
-}
-/* predict image point using homography---------------------------------------
- * args:    insopt_t *opt   I   ins options
- *          double *R,*t    I   rotation and translation between frames
- *          double *K       I   camera calibration parameters
- *          double *uv      I   image coordinate of precious frame
- *          double *pre_uv  O   predict image coordinate in current frame
- * return: status (1: ok, 0: fail)
- * ---------------------------------------------------------------------------*/
-extern int predictfeat(const double *R,const double *t,const double *K,
-                       const double *uv,double *uvp)
-{
-    double H[9],Ki[9],p[3],pp[3],T[16];
-    double C[9],r[9];
-
-    trace(3,"predictfeatH:\n");
-
-    /* pose of current relative to precious */
-    rt2tf(R,t,T); if (matinv(T,4)) return 0;
-    tf2rt(T,C,r);
-
-    /* homography by rotation */
-    matcpy(Ki,K,3,3); if (matinv(Ki,3)) return 0;
-    matmul33("NNN",K,C,Ki,3,3,3,3,H);
-
-    trace(3,"H=\n"); tracemat(3,H,3,3,12,6);
-
-    /* predict image coordinate */
-    p[0]=uv[0];
-    p[1]=uv[1];
-    p[2]=1.0;
-    matmul("NN",3,1,3,1.0,H,p,0.0,pp);
-
-    uvp[0]=pp[0]/pp[2]; uvp[1]=pp[1]/pp[2];
-    return 1;
-}
-/* is in ROI------------------------------------------------------------------*/
-extern int inroi(const float u,const float v,const matchopt_t *opt)
-{
-    return u>opt->roi[0][0]&&u<opt->roi[1][0]&&
-           v>opt->roi[0][1]&&v<opt->roi[1][1];
 }

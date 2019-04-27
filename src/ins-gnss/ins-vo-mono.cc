@@ -6,6 +6,9 @@
 *----------------------------------------------------------------------------*/
 #include "carvig.h"
 
+#define MAXVOGDOP     1.5       /* reject threshold of gdop */
+#define REFINE_F      1         /* refine fundamental matrix */
+
 /* struct type---------------------------------------------------------------*/
 typedef struct {                /* distance data type for 3-D points */
     double d;                   /* distance */
@@ -431,6 +434,28 @@ static int normfeature(const frame_t *frame,const voopt_t *opt,
     }
     return 1;
 }
+/* check match feature geometric distribution---------------------------------*/
+static int chkgeodistribt(const voopt_t *opt,const frame_t *frame,const int *active,int n)
+{
+    double xyz[3],*Q,*H,gdop=1E9;
+    int nv=0,i,j;
+
+    H=zeros(3,n); Q=zeros(3,3);
+    for (i=0;i<n;i++) {
+        xyz[0]=frame->data[active[i]].u1c;
+        xyz[1]=frame->data[active[i]].v1c;
+        xyz[2]=1.0;
+
+        for (j=0;j<3;j++) H[3*nv+j]=xyz[j]/norm(xyz,3);
+        nv++;
+    }
+    matmul("NT",3,3,n,1.0,H,H,0.0,Q);
+    if (!matinv(Q,3)) {
+        gdop=SQRT(Q[0]+Q[4]+Q[8]); /* gdop */
+    }
+    free(H); free(Q);
+    return gdop<MAXVOGDOP;
+}
 /* estimate motion-----------------------------------------------------------
  * args   :  voopt_t *opt    I  visual odometry options
  *           frame_t *frame  I  feature points frame
@@ -452,8 +477,8 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr,double *ra
         return 0;
     }
     idx=imat(8,1); in=imat(1,n); inl=imat(1,n);
-
-    X=mat(4,n); x=mat(2,n);
+    X=mat(4,n);
+    x=mat(2,n);
     d=mat(1,n);
 
     /* create calibration matrix */
@@ -461,14 +486,20 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr,double *ra
 
     /* normalize feature points and return on errors */
     if (!normfeature(frame,opt,Tp,Tc,&nf)) {
-        trace(2,"normalize feature fail\n");
-        goto exit;
+
+        trace(2,"normalize fail\n");
+        free(idx); free(in); free(X); free(x);
+        free(inl); free(d );
+        freeframe(&nf);
+        return 0;
     }
     /* initial RANSAC estimate of F */
     for (ni=0,i=0;i<opt->ransac_iters;i++) {
 
         /* draw random sample set */
         getrandsample(n,8,idx);
+
+        if (!chkgeodistribt(opt,&nf,idx,8)) continue;
 
         /* estimate fundamental matrix and get inliers */
         fundamental(&nf,idx,8,F); m=getinlier(&nf,opt,F,inl);
@@ -481,14 +512,18 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr,double *ra
     }
     if (ni<10) {
         trace(2,"no enough inliers\n");
-        goto exit;
+        free(idx); free(in); free(X); free(x);
+        free(inl); free(d );
+        freeframe(&nf);
+        return 0;
     }
     /* ratio of inliers */
     if (ratio) *ratio=(double)ni/nf.n;
 
+#if REFINE_F
     /* refine F using all inliers */
     fundamental(&nf,in,ni,F);
-
+#endif
     /* de-normalise and extract essential matrix */
     matmul33("TNN",Tc,F,Tp,3,3,3,3,F);
     matmul33("TNN",K,F,K,3,3,3,3,E);
@@ -510,13 +545,23 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr,double *ra
     }
     if (j<10) {
         trace(2,"no enough feature points to process\n");
-        goto exit;
+
+        free(idx); free(in); free(X); free(x);
+        free(inl); free(d );
+        freeframe(&nf);
+        return 0;
     }
+#if 0
     smallerthanmedian(X,j,&mid,NULL);
+
     if (mid>opt->motion_thres) {
         trace(2,"fail due to little motion\n");
-        goto exit;
+        free(idx); free(in); free(X); free(x);
+        free(inl); free(d );
+        freeframe(&nf);
+        return 0;
     }
+#endif
     /* compute rotation angles */
     U[0]=asin( R[0+3*2]);
     U[1]=asin(-R[1+3*2]/cos(U[0]));
@@ -526,7 +571,6 @@ static int estmono(const voopt_t *opt,const frame_t *frame,double *Tr,double *ra
         Tr[0]=U[0]; Tr[1]=U[1]; Tr[2]=U[2];
         Tr[3]=t[0]; Tr[4]=t[1]; Tr[5]=t[2];
     }
-exit:
     free(idx); free(in); free(X); free(x);
     free(inl); free(d );
     freeframe(&nf);

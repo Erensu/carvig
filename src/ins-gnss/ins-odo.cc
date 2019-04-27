@@ -250,8 +250,7 @@ static int odofilt(const insopt_t *opt,const imud_t *imu,const odod_t *odo,
 
     matcpy(ins->vr,odo->vr,1,3);
 
-    if ((nv=odoHVR(opt,ins->Cbe,ins->rbl,
-                   ins->Cbr,ins->ve,ins->os,
+    if ((nv=odoHVR(opt,ins->Cbe,ins->rbl,ins->Cbr,ins->ve,ins->os,
                    imu,odo,nx,v,H,R))) {
 
         /* ekf filter */

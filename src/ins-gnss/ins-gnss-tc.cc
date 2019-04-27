@@ -246,7 +246,7 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
             rechkatt(ins,imu);
 #endif
             /* ins state in n-frame */
-            update_ins_state_n(ins);
+            updinsn(ins);
         }
         else {
             trace(2,"tightly coupled fail\n");

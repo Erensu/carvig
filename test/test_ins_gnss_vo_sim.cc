@@ -91,7 +91,6 @@ int main(int argc, char **argv)
 
     test_C();
 
-
     const char *datafile="/home/sujinglan/carvig/test/data/Profile_2.csv";
     const char *vofile="./vo-sim.out";
     const char *imufile="./imu-sim.out";
@@ -106,13 +105,13 @@ int main(int argc, char **argv)
     cam.K[8]=1.0;
 
 #if 1
-    err.ba[0]=9000.0*9.80665E-5;
-    err.ba[1]=-13000*9.80665E-5;
-    err.ba[2]=8000*9.80665E-5;
+    err.ba[0]=900*9.80665E-5;
+    err.ba[1]=-1300*9.80665E-5;
+    err.ba[2]=800*9.80665E-5;
 
-    err.bg[0]=-9000.0*D2R/3600;
-    err.bg[1]=13000*D2R/3600;
-    err.bg[2]=-8000*D2R/3600;
+    err.bg[0]=-900.0*D2R/3600;
+    err.bg[1]=1300*D2R/3600;
+    err.bg[2]=-800*D2R/3600;
 
     err.wgn[0]=0.01*D2R/60.0;
     err.wgn[1]=0.01*D2R/60.0;
@@ -122,6 +121,7 @@ int main(int argc, char **argv)
     err.wan[1]=100*9.80665E-6;
     err.wan[2]=100*9.80665E-6;
 
+    /*
     err.Ma[0]=500*1E-6; err.Ma[3]=-300*1E-6; err.Ma[6]=200*1E-6;
     err.Ma[1]=-150*1E-6; err.Ma[4]=-600*1E-6; err.Ma[7]=250*1E-6;
     err.Ma[2]=-250*1E-6; err.Ma[5]=100*1E-6; err.Ma[8]=450*1E-6;
@@ -135,6 +135,7 @@ int main(int argc, char **argv)
     err.Gg[2]=0.3; err.Gg[5]=-1.1; err.Gg[8]=-1.3;
 
     for (int i=0;i<9;i++) err.Gg[i]*=(D2R/(3600*9.80665));
+     */
 #endif
 
     insopt.voopt.ebc[0]=1.57079632;

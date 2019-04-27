@@ -150,7 +150,13 @@ static void copyimg(img_t *out,const img_t *in)
 
     /* update image raw data */
     if (in==NULL) return;
-    out->data=(unsigned char*)malloc(sizeof(unsigned char)*in->w*in->h);
+    if (out->data) {
+        free(out->data);
+        out->data=(unsigned char*)malloc(sizeof(unsigned char)*in->w*in->h);
+    }
+    else {
+        out->data=(unsigned char*)malloc(sizeof(unsigned char)*in->w*in->h);
+    }
     memcpy(out->data,in->data,sizeof(unsigned char)*in->w*in->h);
     out->h=in->h;
     out->w=in->w;
@@ -342,6 +348,10 @@ static int updatetrack(const img_t *pimg,const img_t *cimg,const voopt_t *opt,in
             track->nnew++;
         }
     }
+    /* check track lost features */
+    for (i=0;i<track->n;i++) {
+        if (track->data[i].flag==TRACK_LOST) track->data[i].last_idx=-1;
+    }
     /* add image data to buffer */
     addimg2buf(cimg);
     return track->n>0;
@@ -362,12 +372,18 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
     register int i,idx=0;
     feature feat;
 
-    track->nnew=0; track->nupd=0; /* initial feature numbers */
+    trace(3,"match2track: n=%d\n",track->n);
+
+    /* initial feature numbers */
+    track->nnew=0;
+    track->nupd=0;
 
     trace(3,"match2track:\n");
 
     /* initial flag of all track */
-    for (i=0;i<track->n;i++) if (track->data[i].last_idx!=-1) track->data[i].flag=TRACK_LOST;
+    for (i=0;i<track->n;i++) track->data[i].flag=TRACK_LOST;
+
+    /* input detected feature data */
     if (cimg->feat) {
         return updatetrack(pimg,cimg,opt,curr_frame,tp,tc,track);
     }
@@ -438,6 +454,11 @@ extern int match2track(const match_set *mset,gtime_t tp,gtime_t tc,int curr_fram
     /* update match index in hash table */
     for (i=0;i<track->nupd;i++) {
         hash_add(&hash,track->updtrack[i],track->data[track->updtrack[i]].last_idx);
+    }
+    for (i=0;i<track->n;i++) {
+        if (track->data[i].flag!=TRACK_LOST) continue;
+        track->data[i].last_idx=-1;
+        track->nlost++;
     }
     /* add image data to buffer */
     addimg2buf(cimg);

@@ -134,6 +134,10 @@ EXPORT opt_t sysopts[]={
     {"out-bg",          0,  (void *)&solopt_.outbg,      ""     },
     {"out-inspof",      0,  (void *)&solopt_.ins_posf,   ""     },
     {"out-imuraw",      0,  (void *)&solopt_.outimuraw,  ""     },
+    {"out-Ma",          0,  (void *)&solopt_.outMa,      ""     },
+    {"out-Mg",          0,  (void *)&solopt_.outMg,      ""     },
+    {"out-vo",          0,  (void *)&solopt_.outvo,      ""     },
+    {"out-enu",          0,  (void *)&solopt_.outenu,    ""     },
     
     {"stats-eratio1",   1,  (void *)&prcopt_.eratio[0],  ""     },
     {"stats-eratio2",   1,  (void *)&prcopt_.eratio[1],  ""     },
@@ -195,6 +199,8 @@ EXPORT opt_t sysopts[]={
     {"file-monodir",    2,  (void *)prcopt_.monodir,     ""     },
     {"file-gtfile",     2,  (void *)filopt_.gtfile,      ""     },
     {"file-magfile",    2,  (void *)filopt_.magfile,     ""     },
+    {"file-glofile",    2,  (void *)filopt_.glofile,     ""     },
+    {"file-mixfile",    2,  (void *)filopt_.mixfile,     ""     },
 
     {"",0,NULL,""} /* terminator */
 };
@@ -257,6 +263,7 @@ EXPORT opt_t insopts[]={
     {"ins-nhz",         1, (void *)&prcopt_.insopt.nhz,      "" },
     {"ins-lcopt",       0, (void *)&prcopt_.insopt.lcopt,    "" },
     {"ins-pose-aid",    0, (void *)&prcopt_.insopt.pose_aid, "" },
+    {"ins-exinserr",    0, (void *)&prcopt_.insopt.exinserr, ""},
 
     {"ins-align-dualant",0,(void *)&prcopt_.insopt.align_dualants,""},
     {"ins-align-given"  ,0,(void *)&prcopt_.insopt.align_given,   ""},

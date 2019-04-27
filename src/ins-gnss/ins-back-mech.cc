@@ -157,7 +157,7 @@ extern int updateinsbe(const insopt_t *insopt,insstate_t *ins,const imud_t *data
     matcpy(ins->fbp  ,data->accl,1,3);
 
     /* update ins stats in n-frame */
-    update_ins_state_n(ins);
+    updinsn(ins);
 
     ins->dt=timediff(data->time,ins->time);
     ins->ptime=ins->time;
@@ -401,7 +401,7 @@ extern int updateinsbn(const insopt_t *insopt,insstate_t *ins,const imud_t *data
 
     trace(5,"ins(-)=\n"); traceins(5,ins);
 
-    update_ins_state_n(ins);
+    updinsn(ins);
 
     /* save precious ins states */
     savepins(ins,data);

@@ -120,6 +120,7 @@ extern void dipsplyimg(const img_t *img)
     static int first=1;
     static char text[126];
 
+    if (img==NULL) return;
     if (first) {
         cv::namedWindow("Display-Image",CV_WINDOW_AUTOSIZE);
         first=0;
@@ -195,6 +196,7 @@ extern void drawalltrack(const track_t *track)
         cv::namedWindow("All-Match-Image-Display",CV_WINDOW_AUTOSIZE);
         first=0;
     }
+    cv::Mat overlay;
     for (i=0;i<track->nnew;i++) {
 
         cv::Point p1;
@@ -206,35 +208,32 @@ extern void drawalltrack(const track_t *track)
         p2.x=(int)track->data[track->newtrack[i]].data[1].u+imgp1->w;
         p2.y=(int)track->data[track->newtrack[i]].data[1].v;
         cv::circle(I,p2,2,cv::Scalar(0,255,0),1);
-
-        cv::Mat overlay;
+#if 0
         I.copyTo(overlay);
 
         cv::line(overlay,p1,p2,CV_RGB(255,0,255),1,8,0);
         cv::addWeighted(overlay,0.2,I,0.8,0,I);
+#endif
     }
-    cv::imshow("All-Match-Image-Display",I);
-    cv::waitKey(0);
-    
     for (i=0;i<track->nupd;i++) {
         cv::Point p1;
         p1.x=(int)track->data[track->updtrack[i]].data[track->data[track->updtrack[i]].n-2].u;
         p1.y=(int)track->data[track->updtrack[i]].data[track->data[track->updtrack[i]].n-2].v;
-        cv::circle(II,p1,2,cv::Scalar(0,0,255),1);
+        cv::circle(I,p1,2,cv::Scalar(0,0,255),1);
 
         cv::Point p2;
         p2.x=(int)track->data[track->updtrack[i]].data[track->data[track->updtrack[i]].n-1].u+imgp1->w;
         p2.y=(int)track->data[track->updtrack[i]].data[track->data[track->updtrack[i]].n-1].v;
-        cv::circle(II,p2,2,cv::Scalar(0,255,0),1);
-
-        cv::Mat overlay;
-        II.copyTo(overlay);
+        cv::circle(I,p2,2,cv::Scalar(0,255,0),1);
+#if 0
+        I.copyTo(overlay);
 
         cv::line(overlay,p1,p2,CV_RGB(255,0,0),1,8,0);
-        cv::addWeighted(overlay,0.2,II,0.8,0,II);
+        cv::addWeighted(overlay,0.2,I,0.8,0,I);
+#endif
     }
-    cv::imshow("All-Match-Image-Display",II);
-    cv::waitKey(0);
+    cv::imshow("All-Match-Image-Display",I);
+    cv::waitKey(3);
 }
 
 

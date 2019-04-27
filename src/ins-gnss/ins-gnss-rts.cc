@@ -231,7 +231,7 @@ static int init_ins(const imud_t *imu,const gsof_t *pos,const insopt_t *iopt,
     ins->stat=INSS_INIT;
 
     /* update ins state in n-frame */
-    update_ins_state_n(ins);
+    updinsn(ins);
 
     trace(3,"initial ins state ok\n");
     return 1;
@@ -445,9 +445,9 @@ static void torts(ins_sol_t *sol,const insstate_t *ins,const insopt_t *opt,
  *        int type         I   information type
  * return: 1 (ok) or 0 (fail)
  * --------------------------------------------------------------------------*/
-extern int bckup_ins_info(insstate_t *ins,const insopt_t *opt,int type)
+extern int bckupinsinfo(insstate_t *ins, const insopt_t *opt, int type)
 {
-    trace(3,"bckup_ins_info:\n");
+    trace(3,"bckupinsinfo:\n");
     torts(&insol,ins,opt,type);
 }
 /* write forward solution to file in binary----------------------------------*/

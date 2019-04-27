@@ -33,6 +33,7 @@
 *           2017/05/26 1.14 support TERSUS
 *-----------------------------------------------------------------------------*/
 #include <stdint.h>
+#include <include/carvig.h>
 #include "carvig.h"
 
 #define P2_34       5.820766091346740E-11 /* 2^-34 */
@@ -949,6 +950,17 @@ extern int init_raw(raw_t *raw, int format)
     }
     return 1;
 }
+/* delete hash table-----------------------------------------------------------*/
+static void hash_rmimgfeat(feature **ht)
+{
+    struct feature *current,*tmp;
+
+    HASH_ITER(hh,*ht,current,tmp) {
+        HASH_DEL(*ht,current);  /* delete; users advances to next */
+        free(current);          /* optional- if you want to free  */
+    }
+    *ht=NULL; /* delete */
+}
 /* free receiver raw data control ----------------------------------------------
 * free observation and ephemeris buffer in receiver raw data control struct
 * args   : raw_t  *raw   IO     receiver raw data control struct
@@ -970,6 +982,7 @@ extern void free_raw(raw_t *raw)
 
     /* free image date buffer */
     if (raw->img.data) free(raw->img.data); raw->img.data=NULL;
+    if (raw->img.feat) hash_rmimgfeat(&raw->img.feat);
 
     /* free half-cycle correction list */
     for (p=raw->half_cyc;p;p=next) {

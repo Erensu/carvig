@@ -1471,6 +1471,7 @@ static int readrnxfile(const char *file, gtime_t ts, gtime_t te, double tint,
     trace(3,"readrnxfile: file=%s flag=%d index=%d\n",file,flag,index);
     
     if (sta) init_sta(sta);
+    if (!strcmp(file,"")) return 0;
     
     /* uncompress file */
     if ((cstat=rtk_uncompress(file,tmpfile))<0) {
@@ -1536,7 +1537,11 @@ extern int readrnxt(const char *file, int rcv, gtime_t ts, gtime_t te,
     trace(3,"readrnxt: file=%s rcv=%d\n",file,rcv);
     
     if (!*file) {
+#if 0
         return readrnxfp(stdin,ts,te,tint,opt,0,1,&type,obs,nav,sta);
+#else
+        return 0;
+#endif
     }
     for (i=0;i<MAXEXFILE;i++) {
         if (!(files[i]=(char *)malloc(1024))) {

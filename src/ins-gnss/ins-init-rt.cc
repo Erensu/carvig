@@ -17,7 +17,7 @@
 
 /* constants ----------------------------------------------------------------*/
 #define MINSOL        5                  /* max number of solution data */
-#define MINVEL        1.5                /* min velocity for initial ins states */
+#define MINVEL        5.0                /* min velocity for initial ins states */
 #define MAXGYRO       (30.0*D2R)         /* max rotation speed value for initial */
 #define MAXVAR_POSE   (5.0*D2R)          /* max variance of pose measurement */
 #define MAXDIFF       10.0               /* max time difference between solution */
@@ -56,7 +56,7 @@ static void initinsrt(rtksvr_t *svr)
     initodo(&svr->rtk.opt.insopt.odopt,&svr->rtk.ins);
 }
 /* check solution valid------------------------------------------------------*/
-static int chksol(const sol_t *sols)
+static int checksol(const sol_t *sols)
 {
     if (sols->stat==SOLQ_NONE) return 0;
     if (sols->time.time==0) return 0;
@@ -81,7 +81,7 @@ extern int insinitrt(rtksvr_t *svr,const sol_t *sol,const imud_t *imu)
     trace(3,"insinitrt: time=%s\n",time_str(imu->time,4));
 
     /* check solution valid */
-    if (!chksol(sol)) {
+    if (!checksol(sol)) {
         trace(2,"invalid solution data\n"); return 0;
     }
     svr->rtk.ins.stat=INSS_INIT;
@@ -98,7 +98,7 @@ extern int insinitrt(rtksvr_t *svr,const sol_t *sol,const imud_t *imu)
     }
     /* check velocity ok? */
     if (norm(vr,3)<MINVEL||norm(imu->gyro,3)>MAXGYRO) return 0;
-
+    
     for (i=0;i<MINSOL-1;i++) {
         if (timediff(sols[i+1].time,sols[i].time)>MAXDIFF) {
             trace(2,"large time difference of solution\n");
@@ -118,7 +118,8 @@ extern int insinitrt(rtksvr_t *svr,const sol_t *sol,const imud_t *imu)
     ins->time=sols[MINSOL-1].time;
 
     /* update ins state in n-frame */
-    update_ins_state_n(ins);
+    updinsn(ins);
+    matcpy(ins->oxyz,ins->re,3,1);
 
     trace(3,"initial ins state ok\n");
     return 1;
@@ -193,7 +194,8 @@ extern int insinirtobs(rtksvr_t *svr,const obsd_t *obs,int n,const imud_t *imu)
     ins->time=sols[MINSOL-1].time;
 
     /* update ins state in n-frame */
-    update_ins_state_n(ins);
+    updinsn(ins);
+    matcpy(ins->oxyz,ins->re,3,1);
 
     /* reset rtk position options */
     rtkfree(&rtk); first=1;
@@ -221,9 +223,7 @@ extern int insinitdualant(rtksvr_t *svr,const pose_meas_t *pose,const sol_t *sol
     trace(3,"insinitdualant:\n");
 
     /* check solution valid */
-    if (!chksol(sol)) {
-        trace(2,"invalid solution data\n"); return 0;
-    }
+    if (!checksol(sol)) {trace(2,"invalid solution data\n"); return 0;}
     svr->rtk.ins.stat=INSS_INIT;
 
     /* save pvt solution buffer */
@@ -283,11 +283,12 @@ extern int insinitdualant(rtksvr_t *svr,const pose_meas_t *pose,const sol_t *sol
     matmul("TN",3,3,3,1.0,Cbn,Cvn,0.0,ins->Cvb);
 
     matmul33("NNT",Cne,Cvn,ins->Cvb,3,3,3,3,ins->Cbe);
-    gapv2ipv(sols[MINSOL-1].rr,vr,ins->Cbe,
-             ins->lever,imu,ins->re,ins->ve);
+    gapv2ipv(sols[MINSOL-1].rr,vr,ins->Cbe,ins->lever,imu,
+             ins->re,ins->ve);
 
     /* update ins state in n-frame */
-    update_ins_state_n(ins);
+    updinsn(ins);
+    matcpy(ins->oxyz,ins->re,3,1);
 
     ins->time=imu->time;
     trace(3,"initial ins state ok\n");
@@ -325,7 +326,8 @@ extern int insinitgiven(rtksvr_t *svr,const imud_t *imu)
     matmul("NN",3,1,3,1.0,Cne,iopt->vn0,0.0,ins->ve);
 
     /* update ins state in n-frame */
-    update_ins_state_n(ins);
+    updinsn(ins);
+    matcpy(ins->oxyz,ins->re,3,1);
 
     ins->time=imu->time;
     trace(3,"initial ins state ok\n");

@@ -326,7 +326,7 @@ extern void freelc(insstate_t *ins)
 
     ins->nx=ins->nb=0;
     ins->gmeas.n=ins->gmeas.nmax=0;
-    resetindex();
+    resetindex ();
     freevoaid  ();
     freevoaidlc();
 }
@@ -347,6 +347,7 @@ static void getphi_euler(const insopt_t *opt, double dt, const double *Cbe,
 {
     double T1[9],T2[9],T3[18],T4[9],W[18]={0},S[9]={0},Sinv[9];
     double rpy[3],T[9],WC[18]={0},W2[9];
+    double fs[9]={0},omgs[9]={0},Ts[9];
     double omega[3],re,rn[3],ge[3];
     int i,j,nx=xnX(opt);
 
@@ -379,17 +380,22 @@ static void getphi_euler(const insopt_t *opt, double dt, const double *Cbe,
     matmul("NN",3,3,3,1.0,Sinv,Cbe,0.0,T1);
     matmul33("NNN",Sinv,Omge,S,3,3,3,3,T2);
 
+    omgs[0]=omgb[0];
+    omgs[4]=omgb[1];
+    omgs[8]=omgb[2];
+    matmul("NN",3,3,3,1.0,Cbe,omgs,0.0,Ts);
+
     /* attitude transmit matrix */
     for (i=IA;i<IA+NA;i++) {
         for (j=IA;j<  IA+ NA;j++) phi[i+j*nx]-=T2[i-IA+(j-IA )*3]*dt;
         for (j=ibg;j<ibg+nbg;j++) phi[i+j*nx] =T1[i-IA+(j-ibg)*3]*dt;
-        for (j=isg;j<isg+nsg;j++) phi[i+j*nx] =T4[i-IA+(j-isg)*3]*omgb[j-isg]*dt;
+        for (j=isg;j<isg+nsg;j++) phi[i+j*nx] =Ts[i-IA+(j-isg)*3]*dt;
         for (j=irg;j<irg+nrg;j++) phi[i+j*nx] =T3[i-IA+(j-irg)*3]*dt;
     }
     /* velocity transmit matrix */
     matmul3("NN",Cbe,fib,omega);
     skewsym3(omega,T); ecef2pos(pos,rn);
-    pregrav(pos, ge); re=georadi(rn);
+    pregrav(pos,ge); re=georadi(rn);
 
     matmul("NN",3,3,3,1.0,T,S,0.0,T1);
 
@@ -397,13 +403,17 @@ static void getphi_euler(const insopt_t *opt, double dt, const double *Cbe,
     W[7 ]=fib[0]; W[10]=fib[2];
     W[14]=fib[0]; W[17]=fib[1];
     matmul("NN",3,6,3,1.0,Cbe,W,0.0,WC);
+    fs[0]=fib[0];
+    fs[4]=fib[1];
+    fs[8]=fib[2];
+    matmul("NN",3,3,3,1.0,Cbe,fs,0.0,Ts);
 
     for (i=IV;i<IV+NV;i++) {
         for (j=IV; j<IV+NV;  j++) phi[i+j*nx]-=2.0*Omge[i-IV+(j-IV)*3]*dt;
         for (j=IA; j<IA+NA;  j++) phi[i+j*nx] =-T1[i-IV+(j-IA)*3]*dt;
         for (j=IP; j<IP+NP;  j++) phi[i+j*nx] =-2.0*dt/(re*norm(pos,3))*ge[i-IV]*pos[j-IP]-W2[i-IV+(j-IP)*3]*dt;
         for (j=iba;j<iba+nba;j++) phi[i+j*nx] =Cbe[i-IV+(j-iba)*3]*dt;
-        for (j=isa;j<isa+nsa;j++) phi[i+j*nx] =Cbe[i-IV+(j-isa)*3]*fib[j-isa]*dt;
+        for (j=isa;j<isa+nsa;j++) phi[i+j*nx] =Ts [i-IV+(j-isa)*3]*dt;
         for (j=ira;j<ira+nra;j++) phi[i+j*nx] =WC [i-IV+(j-ira)*3]*dt;
     }
     /* position transmit matrix */
@@ -435,6 +445,7 @@ static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
 {
     int i,j,nx=xnX(opt);
     double omega[3]={0},T[9],ge[3],re,rn[3],W[18]={0},WC[18]={0},Cbv[9];
+    double fs[9]={0},omgs[9]={0},Ts[9];
     double W2[9];
 
     trace(3,"getPhi1:\n");
@@ -451,10 +462,16 @@ static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
     W[7 ]=omgb[0]; W[10]=omgb[2];
     W[14]=omgb[0]; W[17]=omgb[1];
     matmul("NN",3,6,3,1.0,Cbe,W,0.0,WC);
+
+    omgs[0]=omgb[0];
+    omgs[4]=omgb[1];
+    omgs[8]=omgb[2];
+    matmul("NN",3,3,3,1.0,Cbe,omgs,0.0,Ts);
+
     for (i=IA;i<IA+NA;i++) {
         for (j= IA;j<IA+NA  ;j++) phi[i+j*nx]-=Omge[i-IA+(j-IA )*3]*dt;
         for (j=ibg;j<ibg+nbg;j++) phi[i+j*nx] =Cbe [i-IA+(j-ibg)*3]*dt;
-        for (j=isg;j<isg+nsg;j++) phi[i+j*nx] =Cbe [i-IA+(j-isg)*3]*omgb[j-isg]*dt;
+        for (j=isg;j<isg+nsg;j++) phi[i+j*nx] =Ts  [i-IA+(j-isg)*3]*dt;
         for (j=irg;j<irg+nrg;j++) phi[i+j*nx] =WC  [i-IA+(j-irg)*3]*dt;
     }
     /* velocity transmit matrix */
@@ -467,13 +484,16 @@ static void getPhi1(const insopt_t *opt, double dt, const double *Cbe,
     W[7 ]=fib[0]; W[10]=fib[2];
     W[14]=fib[0]; W[17]=fib[1];
     matmul("NN",3,6,3,1.0,Cbe,W,0.0,WC);
-
+    fs[0]=fib[0];
+    fs[4]=fib[1];
+    fs[8]=fib[2];
+    matmul("NN",3,3,3,1.0,Cbe,fs,0.0,Ts);
     for (i=IV;i<IV+NV;i++) {
         for (j=IV; j<IV+NV;  j++) phi[i+j*nx]-=2.0*Omge[i-IV+(j-IV)*3]*dt;
         for (j=IA; j<IA+NA;  j++) phi[i+j*nx] =-T[i-IV+(j-IA)*3]*dt;
         for (j=IP; j<IP+NP;  j++) phi[i+j*nx] =-2.0*dt/(re*norm(pos,3))*ge[i-IV]*pos[j-IP]-W2[i-IV+(j-IP)*3]*dt;
         for (j=iba;j<iba+nba;j++) phi[i+j*nx] =Cbe[i-IV+(j-iba)*3]*dt;
-        for (j=isa;j<isa+nsa;j++) phi[i+j*nx] =Cbe[i-IV+(j-isa)*3]*fib[j-isa]*dt;
+        for (j=isa;j<isa+nsa;j++) phi[i+j*nx] =Ts [i-IV+(j-isa)*3]*dt;
         for (j=ira;j<ira+nra;j++) phi[i+j*nx] =WC [i-IV+(j-ira)*3]*dt;
     }
     /* position transmit matrix */
@@ -515,6 +535,7 @@ static void getF(const insopt_t *opt,const double *Cbe,const double *pos,
     int i,j,nx=xnX(opt);
     double F21[9],F23[9],I[9]={1,0,0,0,1,0,0,0,1},omega[3],rn[3],ge[3],re;
     double W[18]={0},WC[18]={0};
+    double fs[9]={0},omgs[9]={0},Ts[9];
     double W2[9];
 
     trace(3,"getF:\n");
@@ -534,10 +555,16 @@ static void getF(const insopt_t *opt,const double *Cbe,const double *pos,
     W[7 ]=omgb[0]; W[10]=omgb[2];
     W[14]=omgb[0]; W[17]=omgb[1];
     matmul("NN",3,6,3,1.0,Cbe,W,0.0,WC);
+
+    omgs[0]=omgb[0];
+    omgs[4]=omgb[1];
+    omgs[8]=omgb[2];
+    matmul("NN",3,3,3,1.0,Cbe,omgs,0.0,Ts);
+
     for (i=IA;i<IA+NA;i++) {
         for (j=IA; j<IA+NA;  j++) F[i+j*nx]=-Omge[i-IA+(j-IA )*3];
         for (j=ibg;j<ibg+nbg;j++) F[i+j*nx]= Cbe [i-IA+(j-ibg)*3];
-        for (j=isg;j<isg+nsg;j++) F[i+j*nx]= Cbe [i-IA+(j-isg)*3]*omgb[j-isg];
+        for (j=isg;j<isg+nsg;j++) F[i+j*nx]= Ts  [i-IA+(j-isg)*3];
         for (j=irg;j<irg+nrg;j++) F[i+j*nx]= WC  [i-IA+(j-irg)*3];
     }
     /* ins velocity system matrix */
@@ -545,13 +572,17 @@ static void getF(const insopt_t *opt,const double *Cbe,const double *pos,
     W[7 ]=fib[0]; W[10]=fib[2];
     W[14]=fib[0]; W[17]=fib[1];
     matmul("NN",3,6,3,1.0,Cbe,W,0.0,WC);
-    
+
+    fs[0]=fib[0];
+    fs[4]=fib[1];
+    fs[8]=fib[2];
+    matmul("NN",3,3,3,1.0,Cbe,fs,0.0,Ts);
     for (i=IV;i<IV+NV;i++) {
         for (j=IA; j<IA+NA;  j++) F[i+j*nx]=-F21[i-IV+(j-IA )*3];
         for (j=IV; j<IV+NV;  j++) F[i+j*nx]=-2.0*Omge[i-IV+(j-IV )*3];
         for (j=IP; j<IP+NP;  j++) F[i+j*nx]= F23[i-IV+(j-IP )*3]-W2[i-IV+(j-IP)*3];
         for (j=iba;j<iba+nba;j++) F[i+j*nx]= Cbe[i-IV+(j-iba)*3];
-        for (j=isa;j<isa+nsa;j++) F[i+j*nx]= Cbe[i-IV+(j-isa)*3]*fib[j-isa];
+        for (j=isa;j<isa+nsa;j++) F[i+j*nx]= Ts [i-IV+(j-isa)*3];
         for (j=ira;j<ira+nra;j++) F[i+j*nx]= WC [i-IV+(j-ira)*3];
     }
     /* ins position system matrix */
@@ -821,9 +852,9 @@ static int valsol(double *x,double *P,const double *R,const double *v,
     trace(3,"valsol:nv=%d\n",nv);
 
     /* check estimated states */
-    if (     x[  0]==DISFLAG&&norm(x+  0,3)>15.0*D2R) i|=1;
+    if (     x[  0]==DISFLAG&&norm(x+  0,3)> 5.0*D2R) i|=1;
     if (nba&&x[iba]==DISFLAG&&norm(x+iba,3)>1E5*Mg2M) i|=1;
-    if (nbg&&x[ibg]==DISFLAG&&norm(x+ibg,3)>15.0*D2R) i|=1;
+    if (nbg&&x[ibg]==DISFLAG&&norm(x+ibg,3)>10.0*D2R) i|=1;
     if (i) {
         trace(2,"too large estimated state error\n");
         return 0;
@@ -844,6 +875,7 @@ static void updinss(insstate_t *ins,const double *re,const double *ve,
 {
     trace(3,"updinss:\n");
 
+    quat_t q;
     matcpy(ins->re,re,1,3); matcpy(ins->ve,ve,1,3);
     matcpy(ins->ba,ba,1,3); matcpy(ins->bg,bg,1,3);
 
@@ -853,6 +885,10 @@ static void updinss(insstate_t *ins,const double *re,const double *ve,
 #if 1
     /* normalization dcm */
     normdcm(ins->Cbe);
+#else
+    dcm2quat(ins->Cbe,&q);
+    quat_normalize_self(&q);
+    quat2dcm(&q,ins->Cbe);
 #endif
     matcpy(ins->Ma,Mac,1,9);
     matcpy(ins->Mg,Mgc,1,9);
@@ -1025,8 +1061,8 @@ extern void lcclp(double *x,double *Cbe,double *re,double *ve,double *fib,
  * note  : if meas[i] is 0.0,then means no measurements to update
  *         if std [i] is 0.0,then means no measurements to update
  * --------------------------------------------------------------------------*/
-static int lcfilt(const insopt_t *opt, insstate_t *ins, const double *meas,
-                  const double *std, const double *cov,const double dt,
+static int lcfilt(const insopt_t *opt, insstate_t *ins, const double *meas,const double *std,
+                  const double *cov,const double dt,
                   double *x, double *P)
 {
     int nm,info=0,stat,nx=ins->nx,i;
@@ -1053,8 +1089,7 @@ static int lcfilt(const insopt_t *opt, insstate_t *ins, const double *meas,
     H=zeros(NM,nx); v=zeros(NM,1);
     R=zeros(NM,NM);
 
-    if ((nm=build_HVR(opt,NULL,Cbe,leverc,omgb,fib,meas,
-                      re,ve,ae,std,cov,P,H,v,R))) {
+    if ((nm=build_HVR(opt,NULL,Cbe,leverc,omgb,fib,meas,re,ve,ae,std,cov,P,H,v,R))) {
         if (cov) {
             for (i=0;i<NM;i++) stde[i]=cov[i+i*NM];
         }
@@ -1073,6 +1108,8 @@ static int lcfilt(const insopt_t *opt, insstate_t *ins, const double *meas,
             free(H); free(v); free(R);
             return 0;
         }
+        trace(3,"dx=\n");
+        tracemat(3,x,1,nx,12,5);
     }
     else {
         trace(3,"no gnss position and velocity measurement\n");
@@ -1084,8 +1121,7 @@ static int lcfilt(const insopt_t *opt, insstate_t *ins, const double *meas,
           leverc,Cbec,fibc,omgbc,opt);
 
     /* post-fit residuals for ins-gnss coupled */
-    if ((nm=build_HVR(opt,NULL,Cbec,leverc,omgbc,fibc,meas,
-                      rec,vec,aec,std,cov,P,H,v,R))) {
+    if ((nm=build_HVR(opt,NULL,Cbec,leverc,omgbc,fibc,meas,rec,vec,aec,std,cov,P,H,v,R))) {
 
         /* validation of solutions */
         if ((stat=valsol(x,P,R,v,nm,10.0))) {
@@ -1111,10 +1147,9 @@ static void precPhi(const insopt_t *opt,double dt,const double *Cbe,
     double *FFF=zeros(nx,nx),*I=eye(nx);
 
     getF(opt,Cbe,pos,omgb,fib,F);
-
-    /* third-order approx */
     for (i=0;i<nx*nx;i++) F[i]*=dt;
 #if 0
+    /* third-order approx */
     matmul("NN",nx,nx,nx,1.0,F,F,0.0,FF);
     matmul33("NNN",F,F,F,nx,nx,nx,nx,FFF);
 
@@ -1126,6 +1161,26 @@ static void precPhi(const insopt_t *opt,double dt,const double *Cbe,
 #endif
     free(F); free(FF);
     free(FFF); free(I);
+}
+/* get system propagate matrix-----------------------------------------------
+ * args:    insopt_t *opt   I  ins options
+ *          insstate_t *ins I  ins states
+ *          double *Phi     O  system propagate matrix
+ * return: none
+ * -------------------------------------------------------------------------*/
+extern void getPhi(const insopt_t *opt,const insstate_t *ins,double *Phi)
+{
+    return precPhi(opt,ins->dt,ins->Cbe,ins->re,ins->omgb,ins->fb,Phi);    
+}
+/* get system noise matrix---------------------------------------------------
+ * args:    insopt_t *opt   I  ins options
+ *          insstate_t *ins I  ins states
+ *          double *Qn      O  system noise matrix
+ * return: none
+ * -------------------------------------------------------------------------*/
+extern void getQn(const insopt_t *opt,const insstate_t *ins,double *Qn)
+{
+    opt->exprn?getprn(ins,opt,ins->dt,Qn):getQ(opt,ins->dt,Qn);
 }
 /* updates phi,P,Q of ekf----------------------------------------------------*/
 static void updstat(const insopt_t *opt,insstate_t *ins,const double dt,
@@ -1421,14 +1476,14 @@ static int rebootlc(const insopt_t *opt,const gmea_t *data,const imud_t *imu,
 extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
                    gmea_t *gnss, int upd)
 {
-    int stat=1,i,nx=ins->nx,flag;
     double *phi,*Q,*P,*x,*pcov;
     double meas[NM],std[NM],cov[NM*NM]={0};
+    int stat=1,i,nx=ins->nx,flag;
 
     trace(3,"lcigpos: upd=%d,time=%s\n",upd,time_str(data->time,4));
 
     /* backup current ins state for RTS */
-    bckup_ins_info(ins,opt,2);
+    bckupinsinfo(ins,opt,2);
 
 #if CHKNUMERIC
     /* check numeric of estimate state */
@@ -1458,15 +1513,15 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
         !updateins(opt,ins,data):
 #endif
         !updateinsb(opt,ins,data)) {
-        trace(2,"ins mechanization updates fail\n");
+        trace(2,"ins mechanization update fail\n");
         return 0;
     }
     /* backup predict ins state for RTS */
-    bckup_ins_info(ins,opt,1);
+    bckupinsinfo(ins,opt,1);
 
     /* ins mechanization */
     if (upd==INSUPD_INSS) return stat;
-
+    
 #if REBOOT
     /* reboot ins loosely coupled if need */
     if ((flag=rebootlc(opt,upd==INSUPD_TIME?NULL:gnss,data,ins))) {
@@ -1486,6 +1541,18 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
     }
     else if (upd==INSUPD_MEAS&&gnss!=NULL) {
 
+        trace(3,"gnss measurement data:\n");
+        trace(3,"position=(%10.4lf %10.4lf %10.4lf)-(%6.4lf %6.4lf %6.4lf)\n",
+              gnss->pe[0],gnss->pe[1],gnss->pe[2],
+              gnss->std[0],
+              gnss->std[1],
+              gnss->std[2]);
+        trace(3,"velocity=(%10.4lf %10.4lf %10.4lf)-(%6.4lf %6.4lf %6.4lf)\n",
+              gnss->ve[0],gnss->ve[1],gnss->ve[2],
+              gnss->std[3],
+              gnss->std[4],
+              gnss->std[5]);
+
         /* position and velocity for antenna */
         for (i=0;i<3;i++) {
             meas[i+0]=gnss->pe[i]; meas[i+3]=gnss->ve[i];
@@ -1503,8 +1570,7 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
             updstat(opt,ins,timediff(gnss->t,ins->plct),ins->xa,ins->Pa,phi,P,x,Q);
         }
         /* ins-gnss loosely coupled */
-        if ((stat=lcfilt(opt,ins,meas,std,pcov,timediff(gnss->t,ins->time),
-                         x,P))) {
+        if ((stat=lcfilt(opt,ins,meas,std,pcov,timediff(gnss->t,ins->time),x,P))) {
 
             /* propagate by gps epoch time internal */
             if (opt->updint==UPDINT_GNSS) {
@@ -1512,7 +1578,6 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
                 matcpy(ins->Pa,P,nx,nx);
             }
             else {
-                /* update ins states covariance */
                 matcpy(ins->x,x,nx,1);
                 matcpy(ins->P,P,nx,nx);
             }
@@ -1527,8 +1592,9 @@ extern int lcigpos(const insopt_t *opt, const imud_t *data, insstate_t *ins,
     else {
         trace(2,"no gnss measurement data\n");
     }
-    free(x); free(P); free(phi);
-    free(Q);
+exit:
+    free(x); free(P);
+    free(Q); free(phi);
     return stat;
 }
 /* convert ins solution status to sol_t struct-------------------------------
@@ -1579,6 +1645,10 @@ extern void ins2sol(insstate_t *ins,const insopt_t *opt,sol_t *sol)
     matcpy(sol->bg,ins->bg,1,3);
     matcpy(sol->ba,ins->ba,1,3);
 
+    /* Ma and Mg */
+    matcpy(sol->Ma,ins->Ma,3,3);
+    matcpy(sol->Mg,ins->Mg,3,3);
+
     /* imu raw data */
     matcpy(sol->imu.gyro,ins->omgb,1,3);
     matcpy(sol->imu.accl,ins->fb,1,3);
@@ -1590,6 +1660,7 @@ extern void ins2sol(insstate_t *ins,const insopt_t *opt,sol_t *sol)
 
     sol->dtrr=ins->dtrr;
     sol->time=ins->time;
+    sol->vo=ins->vo; 
 }
 /* given gps antenna position/velocity to initial ins states-----------------
  * args    :  gtime_t time     I  time of antenna position/velocity

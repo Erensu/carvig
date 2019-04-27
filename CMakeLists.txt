@@ -31,8 +31,8 @@ find_package(PythonLibs REQUIRED)
 
 include_directories(${PROJECT_SOURCE_DIR}
         ${PROJECT_SOURCE_DIR}/include
-        ${PROJECT_SOURCE_DIR}/include/vision
         ${PROJECT_SOURCE_DIR}/src/ins-gnss/rcv
+        ${PROJECT_SOURCE_DIR}/src/libviso
         ${EIGEN3_INCLUDE_DIR}
 )
 include_directories(${PYTHON_INCLUDE_DIRS})
@@ -47,13 +47,32 @@ target_link_libraries(carvig blas lapack z pthread
 set_target_properties(carvig PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
                       ${PROJECT_SOURCE_DIR}/lib)
 
-add_executable(carvignav src/ins-gnss/app/igvonav.cc)
-target_link_libraries(carvignav carvig pthread
-                      ${OpenCV_LIBS})
-
 # add test
 add_subdirectory(test)
 
 # add relative pose estimate library
 add_subdirectory(src/relative-pose)
+
+# add libvisio
+add_subdirectory(src/libviso)
+
+add_executable(carvignav src/ins-gnss/app/igvonav.cc)
+target_link_libraries(carvignav carvig pthread
+                      ${OpenCV_LIBS}
+                      five-point-nister
+                      viso)
+
+add_executable(tc-postpos src/ins-gnss/app/tc-postpos.cc)
+target_link_libraries(tc-postpos
+                      carvig pthread
+                      ${OpenCV_LIBS}
+                      five-point-nister
+                      viso)
+
+add_executable(rnx2rtkp src/ins-gnss/app/rnx2rtkp.cc)
+target_link_libraries(rnx2rtkp
+                      carvig pthread
+                      ${OpenCV_LIBS}
+                      five-point-nister
+                      viso)
 
