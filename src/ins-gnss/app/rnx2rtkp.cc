@@ -148,7 +148,7 @@ int main(int argc, char **argv)
 
     if (!ret) fprintf(stderr,"%40s\r","");
     for (i=0;i<MAXFILE;i++) {
-        free(infile[i]);
+        if (infile[i]) free(infile[i]);
     }
     return ret;
 }
