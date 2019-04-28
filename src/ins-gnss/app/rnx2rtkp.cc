@@ -126,7 +126,7 @@ int main(int argc, char **argv)
         fprintf(stderr,"no options file: %s. defaults used\n",file);
     }
     getsysopts(&prcopt,&solopt,&filopt);
-    for (i=0;i<16;i++) {
+    for (i=0;i<MAXFILE;i++) {
         if (!(infile[i]=(char *)malloc(1024))) {
             for (;i>=0;i--) free(infile[i]); return -1;
         }
@@ -147,5 +147,8 @@ int main(int argc, char **argv)
     ret=postpos(ts,te,tint,0.0,&prcopt,&solopt,&filopt,infile,n,outfile,"","");
 
     if (!ret) fprintf(stderr,"%40s\r","");
+    for (i=0;i<MAXFILE;i++) {
+        free(infile[i]);
+    }
     return ret;
 }
