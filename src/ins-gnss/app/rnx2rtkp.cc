@@ -131,12 +131,6 @@ int main(int argc, char **argv)
             for (;i>=0;i--) free(infile[i]); return -1;
         }
     }
-    prcopt.mode  =PMODE_KINEMA;
-    prcopt.navsys=0;
-    prcopt.refpos=1;
-    prcopt.glomodear=1;
-    solopt.timef=0;
-
     /* set input files */
     strcpy(infile[0],strpath[0]);
     strcpy(infile[1],strpath[1]);
