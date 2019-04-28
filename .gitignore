@@ -25,3 +25,7 @@ src/ins-gnss/rtksvr.cc~
 test/CMakeLists.txt~
 test/bin/
 test/data/
+/cmake-build-debug/
+!/bin/
+/test/
+!/test/
