@@ -573,6 +573,8 @@ static int posecamfilt(const insopt_t *opt,const pose_meas_t *data,
     free(x); free(P); free(v);
     free(H); free(R);
     return info;
+#else
+    return 0;
 #endif
 }
 /* external pose measurement to update ins navigation------------------------*/
