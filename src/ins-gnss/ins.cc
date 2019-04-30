@@ -1290,8 +1290,14 @@ extern void rotscull_corr(insstate_t *ins,const insopt_t *opt,double dt,
     cross3(dvp,dak,dv3);
 
     domg=norm(dak,3);
-    a1=0.5-SQR(domg)/24.0+SQR(SQR(domg))/720.0;
-    a2=1.0/6.0-SQR(domg)/120.0+SQR(SQR(domg))/5040.0;
+    if (fabs(domg)>1E-6) {
+        a1=(1.0-cos(domg))/SQR(domg);
+        a2=1.0/SQR(domg)*(1.0-sin(domg)/domg);
+    }
+    else {
+        a1=0.5-SQR(domg)/24.0+SQR(SQR(domg))/720.0;
+        a2=1.0/6.0-SQR(domg)/120.0+SQR(SQR(domg))/5040.0;
+    }
     cross3(dak,dv1,dv4);
 
     for (i=0;i<3&&dv;i++) {
