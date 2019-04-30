@@ -2365,7 +2365,7 @@ extern void ecef2pos(const double *r, double *pos)
 {
     double e2=FE_WGS84*(2.0-FE_WGS84),r2=dot(r,r,2),z,zk,v=RE_WGS84,sinp;
     
-    for (z=r[2],zk=0.0;fabs(z-zk)>=1E-4;) {
+    for (z=r[2],zk=0.0;fabs(z-zk)>=1E-8;) {
         zk=z;
         sinp=z/sqrt(r2+z*z);
         v=RE_WGS84/sqrt(1.0-e2*sinp*sinp);

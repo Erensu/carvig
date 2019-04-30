@@ -1,15 +1,17 @@
 /*------------------------------------------------------------------------------
-* ins.cc : ins common functions
-*
-* reference :
-*    [1] P.D.Groves, Principles of GNSS, Intertial, and Multisensor Integrated
-*        Navigation System, Artech House, 2008
-*    [2] Tedaldi D, Pretto A, Menegatti E. A robust and easy to implement method
+ * ins.cc : ins common functions
+ *
+ * reference :
+ *    [1] P.D.Groves, Principles of GNSS, Intertial, and Multisensor Integrated
+ *        Navigation System, Artech House, 2008
+ *    [2] Tedaldi D, Pretto A, Menegatti E. A robust and easy to implement method
  *       for IMU calibration without external equipments,2014.
-*
-* version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
-* history : 2017/09/29 1.0 new
-*-----------------------------------------------------------------------------*/
+ *    [3] Wei M , Schwarz K P . A Strapdown Inertial Algorithm Using an Earth-Fixed
+ *        Cartesian Frame[J]. Navigation, 1990, 37(2):153-167.
+ *
+ * version : $Revision: 1.1 $ $Date: 2008/09/05 01:32:44 $
+ * history : 2017/09/29 1.0 new
+ *-----------------------------------------------------------------------------*/
 #include "carvig.h"
 
 /* constants -----------------------------------------------------------------*/
@@ -24,6 +26,14 @@
 #define FLAT    1.0/298.257223563   /* WGS84 flattening */
 #define E_SQR   0.00669437999014    /* sqr of linear eccentricity of the ellipsoid */
 #define SCULL_CORR 1                /* rotational and sculling motion correction */
+
+#define GRS80_RE    6378137.0       /* GRS80 model parameters */
+#define GRS80_GM    3986005E8
+#define GRS80_J2    0.00108263
+#define GRS80_J4    -2.37091222E-6
+#define GRS80_J6    6.08347E-9
+#define GRS80_OMGE  7.292115E-5
+#define UPDINS_GRS80  1
 
 /* global variable -----------------------------------------------------------*/
 extern const double Omge[9]={0,OMGE,0,-OMGE,0,0,0,0,0}; /* (5.18) */
@@ -355,6 +365,46 @@ extern void quatupd(const double *vi,quat_t *qo)
 {
     quat_t q1,q2; rov2qua(vi,&q1); quat_copy(&q2,qo); quat_mul(qo,&q1,&q2);
 }
+/* computes the curvature matrix and the gravity-----------------------------*/
+static void geoparam(const double *pos,const double *vn,double *wen_n,
+                     double *wie_n,double *g,double *Reo,double *Rno)
+{
+    static double a1,a2,a3,a4,a5,a6;
+    double sr,Re,Rn,sL2,sL4;
+
+    /* local radii */
+    sr=sqrt(1.0-E_SQR*SQR(sin(pos[0])));
+    Re=(RE_WGS84/sr)+pos[2];
+    Rn=(RE_WGS84*(1.0-E_SQR)/(sr*sr*sr))+pos[2];
+
+    if (Reo) *Reo=Re;
+    if (Rno) *Rno=Rn;
+
+    /* local geodetic frame implementation */
+    if (wen_n) {
+        wen_n[0]= vn[1]/Re;
+        wen_n[1]=-vn[0]/Rn;
+        wen_n[2]=-vn[1]*tan(pos[0])/Re;
+    }
+    if (wie_n) {
+        wie_n[0]= OMGE*cos(pos[0]);
+        wie_n[1]= 0.0;
+        wie_n[2]=-OMGE*sin(pos[0]);
+    }
+    /* plump bob gravity (see:Heiskanen and Moritz (1967))*/
+    if (g) {
+        sL2=SQR(sin(pos[0]));
+        sL4=SQR(sL2);
+
+        a1= 9.7803267715;
+        a2= 0.0052790414;
+        a3= 0.0000232718;
+        a4=-0.0000030876910891;
+        a5= 0.0000000043977311;
+        a6= 0.0000000000007211;
+        *g=a1*(1+a2*sL2+a3*sL4)+(a4+a5*sL2)*pos[2]+a6*SQR(pos[2]);
+    }
+}
 /* calculates  acceleration due to gravity resolved about north, east, and down
  * args  : double *pos      I  position in n-frame {lat,lon,h} (rad/m)
  *         double *gn       O  gravity in n-frame (m/s2)
@@ -391,11 +441,19 @@ extern double gravity0(const double *pos)
 *-----------------------------------------------------------------------------*/
 extern void gravity(const double *re, double *ge)
 {
+#if 1
     double pos[3],gn[3]={0},Cne[9];
     ecef2pos(re,pos);
     gn[2]=gravity0(pos)*(1.0-2.0*pos[2]/RE);
     ned2xyz(pos,Cne); 
     matmul3v("N",Cne,gn,ge);
+#else
+    double pos[3],gn[3]={0},Cne[9];
+    ecef2pos(re,pos);
+    ned2xyz(pos,Cne);
+    geoparam(pos,NULL,NULL,NULL,gn+2,NULL,NULL);
+    matmul3v("N",Cne,gn,ge);
+#endif
 }
 /* calculates  acceleration due to gravity resolved about ecef-frame ---------
  * args  : double *pos     I   cartesian position of body frame w.r.t. ecef frame,
@@ -405,6 +463,37 @@ extern void gravity(const double *re, double *ge)
  * --------------------------------------------------------------------------*/
 extern void pregrav(const double *pos, double *g)
 {
+#if UPDINS_GRS80
+    double rn[3];
+    double a1,a2,a3,a4,a5,b1,b2,b3,c1,c2,c3,c4,d1,d2,d3,d4,t,r,ar;
+    double ar4,ar6,ar2;
+    r=norm(pos,3); ar=GRS80_RE/r;
+
+    ecef2pos(pos,rn);
+    ar2=SQR(ar);
+    ar4=SQR(SQR(ar));
+    ar6=ar2*ar4;
+
+    a1=-GRS80_GM/SQR(r);
+    a2=1.0+1.5*GRS80_J2*ar2-15.0/8.0*GRS80_J4*ar4+35.0/16.0*GRS80_J6*ar6;
+    a3=-4.5*GRS80_J2*ar2+75.0/4.0*GRS80_J4*ar4-735.0/16.0*GRS80_J6*ar6;
+    a4=-175.0/8.0*GRS80_J4*ar4+2250.0/16.0*GRS80_J6*ar6;
+    a5=-1617.0/16.0*GRS80_J6*ar6;
+
+    b1=3.0*GRS80_J2*ar2-15.0/2.0*GRS80_J4*ar4+105.0/8.0*GRS80_J6*ar6;
+    b2=35.0/2.0*GRS80_J4*ar4-945.0/12.0*GRS80_J6*ar6;
+    b3=693.0/8.0*GRS80_J6*ar6;
+
+    c1=a2;    d1=a2+b1;
+    c2=a3-b1; d2=c2+b2;
+    c3=a4-b2; d3=c3+b3;
+    c4=a5-b3; d4=c4;
+
+    t=sin(rn[0]);
+    g[0]=a1/r*((c1+c2*t*t+c3*t*t*t*t+c4*t*t*t*t*t*t)*pos[0])+GRS80_OMGE*GRS80_OMGE*pos[0];
+    g[1]=a1/r*((c1+c2*t*t+c3*t*t*t*t+c4*t*t*t*t*t*t)*pos[1])+GRS80_OMGE*GRS80_OMGE*pos[1];
+    g[2]=a1/r*((d1+d2*t*t+d3*t*t*t*t+d4*t*t*t*t*t*t)*pos[2]);
+#else
     double r,z,gamma;
 
     /* calculate distance from center of the earth */
@@ -419,6 +508,7 @@ extern void pregrav(const double *pos, double *g)
     g[2]=z*(pos[2]+gamma*(3.0-5.0*SQR(pos[2]/r))*pos[2]); /* (2.91) */
     g[0]+=SQR(OMGE)*pos[0];
     g[1]+=SQR(OMGE)*pos[1]; /* (2.84) */
+#endif
 }
 /* gives the heading Euler angle, in terms of the roll, pitch,
  * and gyro measurements ------------------------------------------------------
@@ -544,6 +634,16 @@ static void updateatt(double t, double *Cbe, const double *omgb,const double *da
     for (i=0;i<9;i++) Cbe[i]=Cbep[i]-Comg[i]*t; /* (5.20) */
 #endif
 }
+/* normlization quaternion---------------------------------------------------*/
+static void normquat(double *q)
+{
+    double e;
+    e=0.5*(norm(q,4)-1.0);
+
+    q[0]=(1.0-e)*q[0];
+    q[1]=(1.0-e)*q[1];
+    q[2]=(1.0-e)*q[2];
+}
 /* update ins states ----------------------------------------------------------
 * updata ins states with imu measurement data in e-frame
 * args   : insopt   *insopt I   ins updates options
@@ -553,6 +653,91 @@ static void updateatt(double t, double *Cbe, const double *omgb,const double *da
 *----------------------------------------------------------------------------*/
 extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
 {
+#if UPDINS_GRS80
+    double dt,dqb[4],qk_1[4],Ck_1[9],qk[4],dqe[4],qtmp[4],da[3]={0},dv[3]={0};
+    double domgb[3],domge[3],dvfk[3],dvbk[4],domg,dCe[9];
+    double wv[3],Omge[3],ge[3],vek_1[3];
+    int i;
+
+    trace(3,"updateins:\n");
+
+    trace(5,"ins(-)=\n");
+    traceins(5,ins);
+
+    /* save precious epoch ins states */
+    savepins(ins,data);
+
+    if ((dt=timediff(data->time,ins->time))>MAXDT||fabs(dt)<1E-6) {
+
+        /* update time information */
+        ins->dt=timediff(data->time,ins->time);
+        ins->ptime=ins->time;
+        ins->time =data->time;
+
+        trace(2,"time difference too large: %.0fs\n",dt);
+        return 0;
+    }
+    for (i=0;i<3;i++) {
+        ins->omgb0[i]=data->gyro[i];
+        ins->fb0  [i]=data->accl[i];
+        if (insopt->exinserr) {
+            ins_errmodel(data->accl,data->gyro,ins->fb,ins->omgb,ins);
+        }
+        else {
+            ins->omgb[i]=data->gyro[i]-ins->bg[i];
+            ins->fb  [i]=data->accl[i]-ins->ba[i];
+        }
+    }
+    /* update attitude */
+#if SCULL_CORR
+    rotscull_corr(ins,insopt,dt,dv,da);
+#endif
+    for (i=0;i<3;i++) {
+        domgb[i]=ins->omgb[i]*dt+da[i];
+    }
+    rvec2quat(domgb,dqb);
+
+    domge[2]=-OMGE*dt;
+    rvec2quat(domge,dqe);
+    quat2dcmx(dqe,dCe);
+
+    matcpy(Ck_1,ins->Cbe,3,3);
+    dcm2quatx(ins->Cbe,qk_1);
+    quatmulx(qk_1,dqb,qtmp);
+    quatmulx(dqe,qtmp,qk);
+    normquat(qk);
+    quat2dcmx(qk,ins->Cbe);
+
+    /* update velocity */
+    dvbk[0]=ins->fb[0]*dt+dv[0];
+    dvbk[1]=ins->fb[1]*dt+dv[1];
+    dvbk[2]=ins->fb[2]*dt+dv[2];
+    matmul33("NNN",dCe,Ck_1,dvbk,3,3,3,1,dvfk);
+
+    Omge[0]=0.0;
+    Omge[1]=0.0;
+    Omge[2]=OMGE;
+    cross3(Omge,ins->ve,wv);
+    gravity(ins->re,ge);
+    for (i=0;i<3;i++) {
+        ins->ve[i]+=dvfk[i]+(ge[i]-2.0*wv[i])*dt;
+    }
+    /* update position */
+    matcpy(vek_1,ins->ve,1,3);
+    for (i=0;i<3;i++) {
+        ins->re[i]+=0.5*(vek_1[i]+ins->ve[i])*dt;
+    }
+    /* update ins state in n-frame */
+    updinsn(ins);
+
+    ins->dt=timediff(data->time,ins->time);
+    ins->ptime=ins->time;
+    ins->time =data->time;
+    ins->stat =INSS_MECH;
+
+    trace(5,"ins(+)=\n"); traceins(5,ins);
+    return 1;
+#else
     double dt,Cbe[9],fe[3],ge[3],cori[3],Cbb[9]={1,0,0,0,1,0,0,0,1};
     double Ca[9],Ca2[9],a1,a2,a,alpha[3]={0},Omg[9]={0},ae[3]={0};
     double das[3]={0},dvs[3]={0},fb[3];
@@ -582,7 +767,7 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
             ins_errmodel(data->accl,data->gyro,ins->fb,ins->omgb,ins);
         }
         else {
-            ins->omgb[i]=data->gyro[i]-ins->bg[i]; 
+            ins->omgb[i]=data->gyro[i]-ins->bg[i];
             ins->fb  [i]=data->accl[i]-ins->ba[i];
         }
     }
@@ -595,7 +780,7 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     /* update attitude */
     for (i=0;i<9;i++) Cbe[i]=ins->Cbe[i];
     updateatt(dt,ins->Cbe,ins->omgb,das);
-    
+
 #if INSUPDPRE
     for (i=0;i<3;i++) alpha[i]=ins->omgb[i]*dt+das[i];
     skewsym3(alpha,Ca);
@@ -603,7 +788,7 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     if ((a=norm(alpha,3))>1E-8) {
         a1=(1.0-cos(a))/SQR(a); a2=1.0/SQR(a)*(1.0-sin(a)/a);
         matmul3("NN",Ca,Ca,Ca2);
-        for (i=0;i<9;i++) Cbb[i]+=a1*Ca[i]+a2*Ca2[i]; 
+        for (i=0;i<9;i++) Cbb[i]+=a1*Ca[i]+a2*Ca2[i];
         skewsym3(ae,Omg);
         matmul3("NN",Cbe,Cbb,Ca);
         matmul3("NN",Omg,Cbe,Ca2);
@@ -630,7 +815,7 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     /* update velocity/position */
     matmul3v("N",Omge,ins->ve,cori);
     for (i=0;i<3;i++) {
-        ins->ae[i]=fe[i]+ge[i]-2.0*cori[i]; 
+        ins->ae[i]=fe[i]+ge[i]-2.0*cori[i];
         ins->ve[i]+=ins->ae[i]*dt;
         ins->re[i]+=ins->ve[i]*dt+ins->ae[i]/2.0*dt*dt;
     }
@@ -640,10 +825,11 @@ extern int updateins(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     ins->dt=timediff(data->time,ins->time);
     ins->ptime=ins->time;
     ins->time =data->time;
-    ins->stat =INSS_MECH;  
+    ins->stat =INSS_MECH;
 
     trace(5,"ins(+)=\n"); traceins(5,ins);
     return 1;
+#endif
 }
 /* Calculates the meridian and transverse radii of curvature------------------
  * args   : double *rn        I    position in n-frame (lat,lon,h) {rad/m}
@@ -676,12 +862,12 @@ extern int insupdate_ned(const insopt_t *insopt,insstate_t *ins,const imud_t *da
 /* remove effects of lever-arm------------------------------------------------
  * args  :         double *pos      I  imu body position in ecef-frame
  *                 double *re       I  imu body position in ecef-frame
- *                 double *ve       I  imu body velecity in ecef-frame
+ *                 double *ve       I  imu body velocity in ecef-frame
  *                 double *lever    I  imu body-frame to gnss antenna lever-arm
  *                 double *omgb     I  imu gyro measurements data
  *                 double *rec      O  imu body position in ecef-frame after
  *                                     removing effects of lever-arm (NULL: no output)
- *                 double *vec      O  imu body velecity in ecef-frame after
+ *                 double *vec      O  imu body velocity in ecef-frame after
  *                                     removing effects of lever-arm (NULL: no output)
  * return : none
  * note: this function can convert ins body position/velocity to
@@ -1076,46 +1262,6 @@ extern void updinse(insstate_t *ins)
     matmul("NN",3,1,3,1.0,Cne,ins->an,0.0,ins->ae);
 #endif
 }
-/* computes the curvature matrix and the gravity-----------------------------*/
-static void geoparam(const double *pos,const double *vn,double *wen_n,
-                     double *wie_n,double *g,double *Reo,double *Rno)
-{
-    static double a1,a2,a3,a4,a5,a6;
-    double sr,Re,Rn,sL2,sL4;
-
-    /* local radii */
-    sr=sqrt(1.0-E_SQR*SQR(sin(pos[0])));
-    Re=(RE_WGS84/sr)+pos[2];
-    Rn=(RE_WGS84*(1.0-E_SQR)/(sr*sr*sr))+pos[2];
-
-    if (Reo) *Reo=Re;
-    if (Rno) *Rno=Rn;
-
-    /* local geodetic frame implementation */
-    if (wen_n) {
-        wen_n[0]= vn[1]/Re;
-        wen_n[1]=-vn[0]/Rn;
-        wen_n[2]=-vn[1]*tan(pos[0])/Re;
-    }
-    if (wie_n) {
-        wie_n[0]= OMGE*cos(pos[0]);
-        wie_n[1]= 0.0;
-        wie_n[2]=-OMGE*sin(pos[0]);
-    }
-    /* plump bob gravity (see:Heiskanen and Moritz (1967))*/
-    if (g) {
-        sL2=SQR(sin(pos[0]));
-        sL4=SQR(sL2);
-
-        a1= 9.7803267715;
-        a2= 0.0052790414;
-        a3= 0.0000232718;
-        a4=-0.0000030876910891;
-        a5= 0.0000000043977311;
-        a6= 0.0000000000007211;
-        *g=a1*(1+a2*sL2+a3*sL4)+(a4+a5*sL2)*pos[2]+a6*SQR(pos[2]);
-    }
-}
 /* get dcm matrix of b-frame to n-frame--------------------------------------*/
 static void getqbn(const insstate_t *ins, double* qbn)
 {
@@ -1130,6 +1276,7 @@ extern void rotscull_corr(insstate_t *ins,const insopt_t *opt,double dt,
                           double *dv,double *da)
 {
     double dap[3],dvp[3],dak[3],dvk[3],dv1[3],dv2[3],dv3[3];
+    double domg,a1,a2,dv4[3];
     int i;
     for (i=0;i<3;i++) {
         dap[i]=ins->omgbp[i]*ins->dt;
@@ -1141,8 +1288,18 @@ extern void rotscull_corr(insstate_t *ins,const insopt_t *opt,double dt,
     cross3(dak,dvk,dv1);
     cross3(dap,dvk,dv2);
     cross3(dvp,dak,dv3);
+
+    domg=norm(dak,3);
+    a1=0.5-SQR(domg)/24.0+SQR(SQR(domg))/720.0;
+    a2=1.0/6.0-SQR(domg)/120.0+SQR(SQR(domg))/5040.0;
+    cross3(dak,dv1,dv4);
+
     for (i=0;i<3&&dv;i++) {
+#if 0
         dv[i]=0.5*dv1[i]+1.0/12.0*(dv2[i]+dv3[i]);
+#else
+        dv[i]=a1*dv1[i]+a2*dv4[i]+1.0/12.0*(dv2[i]+dv3[i]);
+#endif
     }
     if (da) {
         cross3(dap,dak,da);
@@ -1221,7 +1378,8 @@ extern int updateinsn(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
     }
     /* update ins attitude */
     for (i=0;i<3;i++) vmid[i]=(vmid[i]+ins->vn[i])/2.0;
-    for (i=0;i<3;i++) da[i]=ins->omgb[i]*dt+das[i]; rvec2quat(da,qb);
+    for (i=0;i<3;i++) da[i]=ins->omgb[i]*dt+das[i];
+    rvec2quat(da,qb);
     quatmulx(qbn,qb,q);
 
     /* geo parameters */
@@ -1230,7 +1388,8 @@ extern int updateinsn(const insopt_t *insopt,insstate_t *ins,const imud_t *data)
         da[i]=-(wen_n[i]+wie_n[i])*dt;
     }
     rvec2quat(da,qn);
-    quatmulx(qn,q,qbn); quat2dcmx(qbn,ins->Cbn);
+    quatmulx(qn,q,qbn);
+    quat2dcmx(qbn,ins->Cbn);
 
     /*  update ins position */
     ins->rn[0]+=1.0/Rn*vmid[0]*dt;

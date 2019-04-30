@@ -20,6 +20,7 @@
 #define INSUPDPRE  1                  /* inertial navigation equations precision */
 #define E_SQR      0.00669437999014   /* sqr of linear eccentricity of the ellipsoid */
 #define UPD_INS_E  0                  /* updates ins states in e-frame */
+#define SCULL_CORR 1                  /* rotational and sculling motion correction */
 
 /* save precious epoch ins states--------------------------------------------*/
 static void savepins(insstate_t *ins,const imud_t *data)

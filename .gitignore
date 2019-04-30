@@ -29,3 +29,17 @@ test/data/
 !/bin/
 /test/
 !/test/
+bin/navapp.rslt~
+include/sse2neonbinding.h~
+src/ins-gnss/app/igvonav.cc~
+src/ins-gnss/ins-gnss-vo-lc-preintegration.cc~
+src/ins-gnss/ins-gnss-vo-lc.cc~
+src/ins-gnss/ins-gnss-vo.cc~
+src/ins-gnss/ins-libfast.cc~
+src/ins-gnss/ins-vo-opencv-interface.cc~
+src/ins-gnss/rcv/ground-truth.cc~
+src/ins-gnss/sbas.cc~
+src/ins-gnss/sse2neon-binding.cc~
+src/ins-gnss/visio.cc~
+src/msckf-python/__pycache__/
+test/test_ins_gnss_vo_sim.cc~
