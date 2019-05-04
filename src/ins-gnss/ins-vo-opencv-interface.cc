@@ -16,7 +16,7 @@ namespace cv {
                                OutputArray _t)
     {
 
-        Mat E=_E.getMat().reshape(1,3);
+        Mat E=_E.getMat().reshape(1,3); 
         CV_Assert(E.cols==3&&E.rows==3);
 
         Mat D,U,Vt;

@@ -77,7 +77,7 @@ extern "C"{
 #define LAPACK
 #define TRACE                           /* trace information for debug */
 #define TRACE_INS     1                 /* trace ins updates information */
-#define TRACE_STDERR  0                 /* trace information to stderr if set */
+#define TRACE_STDERR  1                 /* trace information to stderr if set */
 #define VIG_TRACE_MAT 1                 /* trace matrix for debugs */
 #define MAXBUFF     4096                /* size of line buffer */
 #define MAXHIST     256                 /* size of history buffer */
@@ -3155,6 +3155,7 @@ EXPORT void liebracket(const double *omega1,const double *omega2,double *omega);
 EXPORT void so3_hat(const double *omega,double *Omg);
 EXPORT void so3_vee(const double *Omg,double *omega);
 EXPORT void expmat(const double *A,int n,double *E);
+EXPORT double* expm(const double *A,int n);
 EXPORT void rpy2c(const double *rpy,double *C);
 EXPORT void c2rpy(const double *C,double *rpy);
 EXPORT void addlie(const double *a1,const double *a2,double *a);
