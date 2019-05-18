@@ -52,6 +52,7 @@ static double factorial(int n)
  * --------------------------------------------------------------------------*/
 extern void expmat(const double *A,int n,double *E)
 {
+#if 0
     double s,*B,*C;
     int i,j,k;
 
@@ -71,6 +72,11 @@ extern void expmat(const double *A,int n,double *E)
         matcpy(B,C,n,n);
     }
     free(B); free(C);
+#else
+    double *expA=expm(A,n);
+    matcpy(E,expA,n,n);
+    free(expA);
+#endif
 }
 /* roll-pitch-yaw convention from 1-frame to 2-frame-------------------------
  * args:  double *rpy  I  roll,pitch,yaw {rad}
@@ -581,8 +587,8 @@ static int posecamfilt(const insopt_t *opt,const pose_meas_t *data,
 extern int posefusion(const insopt_t *opt,const pose_meas_t *data,
                       insstate_t *ins,int flag)
 {
-    trace(3,"posefusion: time=%s\n",time_str(ins->time,3));
     double dt;
+    trace(3,"posefusion: time=%s\n",time_str(ins->time,3));
 
     /* reset pose fusion status flag */
     ins->pose=0;
@@ -597,6 +603,9 @@ extern int posefusion(const insopt_t *opt,const pose_meas_t *data,
         switch (data->type) {
             case POSE_CAM     : updatecampose(opt,data,ins); break;
             case POSE_DUAL_ANT: updatedualant(opt,data,ins); break;
+            default:
+                trace(2,"not support type\n");
+                break;
         }
     }
     else {
@@ -612,6 +621,9 @@ extern int posefusion(const insopt_t *opt,const pose_meas_t *data,
             case POSE_DUAL_ANT: {
                 return poseantfilt(opt,data,ins,dt);
             }
+            default:
+                trace(2,"not support type\n");
+                break;
         }
     }
     return 1;

@@ -326,7 +326,7 @@ static void procpos(FILE *fp, const prcopt_t *popt, const solopt_t *sopt,
 {
     gtime_t time={0};
     sol_t sol={{0}};
-    rtk_t rtk;
+    rtk_t rtk={{0}};
     obsd_t obs[MAXOBS*2]; /* for rover and base */
     double rb[3]={0};
     int i,nobs,n,solstatic,pri[]={0,1,2,3,4,5,1,6};
@@ -365,7 +365,7 @@ static void procpos(FILE *fp, const prcopt_t *popt, const solopt_t *sopt,
         
         if (mode==0) { /* forward/backward */
             if (!solstatic) {
-                outsol(fp,&rtk.sol,rtk.rb,sopt,&rtk.ins,&popt->insopt);
+                outsol(fp,&rtk.sol,rtk.rb,sopt,NULL,&popt->insopt);
             }
             else if (time.time==0||pri[rtk.sol.stat]<=pri[sol.stat]) {
                 sol=rtk.sol;
@@ -390,7 +390,7 @@ static void procpos(FILE *fp, const prcopt_t *popt, const solopt_t *sopt,
     }
     if (mode==0&&solstatic&&time.time!=0.0) {
         sol.time=time;
-        outsol(fp,&sol,rb,sopt,&rtk.ins,&popt->insopt);
+        outsol(fp,&sol,rb,sopt,NULL,&popt->insopt);
     }
     rtkfree(&rtk);
 }
@@ -624,7 +624,7 @@ static void freepreceph(nav_t *nav, sbs_t *sbs, lex_t *lex)
 }
 /* read obs and nav data -----------------------------------------------------*/
 static int readobsnav(gtime_t ts, gtime_t te, double ti, char **infile,
-                      const int *index, int n, const prcopt_t *prcopt,
+                      const int *index, int n, prcopt_t *prcopt,
                       obs_t *obs, nav_t *nav, sta_t *sta)
 {
     int i,j,ind=0,nobs=0,rcv=1;
@@ -664,10 +664,15 @@ static int readobsnav(gtime_t ts, gtime_t te, double ti, char **infile,
     }
     /* sort observation data */
     nepoch=sortobs(obs);
-    
+
+    /* observation signal index for rover and base */
+    for (i=0;i<2;i++) {
+        for (j=0;j<7;j++) prcopt->sind[i][j]=obs->sind[i][j];
+        for (j=0;j<7;j++) nav->sind[i][j]=obs->sind[i][j];
+    }
     /* delete duplicated ephemeris */
     uniqnav(nav);
-    
+
     /* set time span for progress display */
     if (ts.time==0||te.time==0) {
         for (i=0;   i<obs->n;i++) if (obs->data[i].rcv==1) break;

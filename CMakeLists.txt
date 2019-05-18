@@ -29,8 +29,6 @@ endif()
 find_package(Eigen3 3.1.0 REQUIRED)
 find_package(PythonLibs REQUIRED)
 find_package(Boost REQUIRED)
-find_package(ViennaCL REQUIRED)
-find_package(VexCL REQUIRED)
 
 include_directories(${PROJECT_SOURCE_DIR}
         ${PROJECT_SOURCE_DIR}/include

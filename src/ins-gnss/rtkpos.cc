@@ -990,7 +990,9 @@ static void udbias(rtk_t *rtk, double tt, const obsd_t *obs, const int *sat, con
             j=tc?xiBs((&rtk->opt.insopt),sat[i],f):IB(sat[i],f,&rtk->opt);
 
             P[j+j*nx]+=rtk->opt.prn[0]*rtk->opt.prn[0]*fabs(tt);
-            
+            if (rtk->ssat[sat[i]-1].sfrq[0]) {
+                P[j+j*nx]+=SQR(0.5);
+            }
             slip=rtk->ssat[sat[i]-1].slip[f];
             if (rtk->opt.ionoopt==IONOOPT_IFLC) slip|=rtk->ssat[sat[i]-1].slip[1];
             if (rtk->opt.modear==ARMODE_INST||!(slip&1)) continue;
