@@ -21,7 +21,7 @@
 #define MINVEL       3.0          /* min velocity for initial ins states */
 #define MAXGYRO      (30.0*D2R)   /* max rotation speed value for initial */
 #define MAXDIFF      30.0         /* max time difference between solution */
-#define REBOOT       1            /* ins tightly coupled reboot if always update fail */
+#define REBOOT       0            /* ins tightly coupled reboot if always update fail */
 #define CHKNUMERIC   1            /* check numeric for given value */
 #define RECHK_ATT    1            /* recheck attitude of imu body */
 #define UPD_INS_N    0            /* updates ins states in e-frame */
@@ -47,7 +47,7 @@ static int chkvb(const insstate_t *ins)
 #if 1
     double vb[3];
     matmul("TN",3,1,3,1.0,ins->Cbe,ins->ve,0.0,vb);
-    return fabs(vb[1])<MINVEL&&fabs(vb[2])<MINVEL;
+    return fabs(vb[1])<MINVEL*10.0&&fabs(vb[2])<MINVEL*10.0;
 #else
     return 0;
 #endif
@@ -203,15 +203,18 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
         if ((flag=rebootc(ins,opt,obs,n,imu,nav))) {
             if (flag==1) {
                 trace(2,"ins tightly coupled still reboot\n");
-                info=0; goto exit;
+
+                info=0; 
+                goto exit;
             }
             trace(3,"ins tightly coupled reboot ok\n");
-            ins->stat=INSS_REBOOT; info=1;
+            ins->stat=INSS_REBOOT;
+            info=1;
             goto exit;
         }
 #endif
         /* updates by measurement data */
-        if (obs&&imu&&n) {
+        if (obs&&n) {
 
             /* count rover/base station observations */
             for (nu=0;nu   <n&&obs[nu   ].rcv==1;nu++) ;

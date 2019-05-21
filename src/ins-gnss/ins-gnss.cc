@@ -1235,7 +1235,10 @@ extern void propinss(insstate_t *ins,const insopt_t *opt,double dt,
 /* swap gps position/velocity measurement----------------------------------*/
 static void swap(gmea_t *p1,gmea_t *p2)
 {
-    gmea_t tmp; tmp=*p1; *p1=*p2; *p2=tmp;
+    gmea_t tmp;
+    tmp=*p1;
+    *p1=*p2;
+    *p2=tmp;
 }
 /* save precious epoch gps position/velocity measurements--------------------
  * args  :  insstate_t *ins    IO  ins sates

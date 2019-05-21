@@ -248,7 +248,7 @@ static int rescode(int iter, const obsd_t *obs, int n, const double *rs,
     nx=4+3; /* number of estimate state */
 
     if (ins) {
-        tc=opt->mode==PMODE_INS_TGNSS&&iopt->tc==INSTC_SINGLE;
+        tc=opt->mode==PMODE_INS_TGNSS&&iopt->tc>=INSTC_SINGLE;
         nla=xnLa(iopt);
         ila=xiLa(iopt);
         nrc=xnRc(iopt);
@@ -280,19 +280,19 @@ static int rescode(int iter, const obsd_t *obs, int n, const double *rs,
     for (i=*ns=0;i<n&&i<MAXOBS;i++) {
         vsat[i]=0; azel[i*2]=azel[1+i*2]=resp[i]=0.0;
 
-        if (!(sys=satsys(obs[i].sat,NULL))) continue;
-
+        if (!(sys=satsys(obs[i].sat,NULL))) {
+            continue;
+        }
         /* reject duplicated observation data */
         if (i<n-1&&i<MAXOBS-1&&obs[i].sat==obs[i+1].sat) {
-            trace(2,"duplicated observation data %s sat=%2d\n",
-                  time_str(obs[i].time,3),obs[i].sat);
+            trace(2,"duplicated observation data %s sat=%2d\n",time_str(obs[i].time,3),obs[i].sat);
             i++;
             continue;
         }
         /* geometric distance/azimuth/elevation angle */
-        if ((r=geodist(rs+i*6,rr,e))<=0.0||
-            satazel(pos,e,azel+i*2)<opt->elmin) continue;
-
+        if ((r=geodist(rs+i*6,rr,e))<=0.0||satazel(pos,e,azel+i*2)<opt->elmin) {
+            continue;
+        }
         /* psudorange with code bias correction */
         if ((P=prange(obs+i,nav,azel+i*2,iter,opt,&vmeas))==0.0) continue;
 
@@ -300,16 +300,14 @@ static int rescode(int iter, const obsd_t *obs, int n, const double *rs,
         if (satexclude(obs[i].sat,svh[i],opt)) continue;
 
         /* ionospheric corrections */
-        if (!ionocorr(obs[i].time,nav,obs[i].sat,pos,azel+i*2,
-                      iter>0?opt->ionoopt:IONOOPT_BRDC,&dion,&vion)) continue;
+        if (!ionocorr(obs[i].time,nav,obs[i].sat,pos,azel+i*2,iter>0?opt->ionoopt:IONOOPT_BRDC,&dion,&vion)) continue;
 
         /* GPS-L1 -> L1/B1 */
         if ((lam_L1=nav->lam[obs[i].sat-1][0])>0.0) {
             dion*=SQR(lam_L1/lam_carr[0]);
         }
         /* tropospheric corrections */
-        if (!tropcorr(obs[i].time,nav,pos,azel+i*2,
-                      iter>0?opt->tropopt:TROPOPT_SAAS,&dtrp,&vtrp)) {
+        if (!tropcorr(obs[i].time,nav,pos,azel+i*2,iter>0?opt->tropopt:TROPOPT_SAAS,&dtrp,&vtrp)) {
             continue;
         }
         /* pseudorange residual */
@@ -411,8 +409,8 @@ static int valins(const double *azel, const int *vsat, int n,const prcopt_t *opt
     nbg=xnBg(insopt); ibg=xiBg(insopt);
 
     /* check estimated states */
-    if (norm(x,3)>5.0*D2R||(nba?norm(x+iba,3)>1E4*Mg2M:false)
-        ||(nbg?norm(x+ibg,3)>5.0*D2R:false)) {
+    if (norm(x,3)>5.0*D2R||(nba?norm(x+iba,3)>1E3*Mg2M:false)
+        ||(nbg?norm(x+ibg,3)>3.0*D2R:false)) {
         trace(2,"too large estimated state error\n");
         return 0;
     }
@@ -420,6 +418,7 @@ static int valins(const double *azel, const int *vsat, int n,const prcopt_t *opt
     for (i=0;i<nv;i++) {
         if (v[i]*v[i]<fact*R[i+i*nv]) continue;
         trace(2,"large residual (v=%6.3f sig=%.3f)\n",v[i],SQRT(R[i+i*nv]));
+        return 0;
     }
     /* large gdop check */
     for (i=ns=0;i<n;i++) {
@@ -435,84 +434,134 @@ static int valins(const double *azel, const int *vsat, int n,const prcopt_t *opt
     }
     return 1;
 }
-/* ins estimate states by using pseudorange measurement-----------------------*/
-static int estinspr(const obsd_t *obs,int n,const double *rs,const double *dts,
-                    const double *vare,const int *svh,const nav_t *nav,
-                    const prcopt_t *opt,sol_t *sol, insstate_t *ins,double *azel,
-                    int *vsat,double *resp, char *msg)
+/* iteration for tightly coupled ---------------------------------------------*/
+static int itertc(const obsd_t *obs,int n,const double *rs,const double *dts,
+                  const double *vare,const int *svh,const nav_t *nav,
+                  const prcopt_t *opt,sol_t *sol,double *Pp,double *azel,insstate_t *ins,
+                  int *vsat,double *resp, char *msg)
 {
-    int i,nx,nv,ns,stat=0,irc=0,IP;
-    double *x,*R,*v,*H,*var,*P;
     const insopt_t *insopt=&opt->insopt;
-    static insstate_t inss={0};
+    const static double factor=0.333;
+    int i,nx,nv,ns,stat=0,irc=0,nba,nbg,iba,ibg;
+    double *x,*R,*v,*H,*var;
 
-    trace(3,"estinspr:\n");
+    nba=xnBa(insopt); iba=xiBa(insopt);
+    nbg=xnBg(insopt); ibg=xiBg(insopt);
 
     nx=xnX(insopt);
-    irc=xiRc(insopt); IP=xiP(insopt);
+    irc=xiRc(insopt);
 
     x=zeros(nx,1); R=zeros(NFREQ*n+4,NFREQ*n+4);
     H=zeros(nx,NFREQ*n+4); v=zeros(NFREQ*n+4,1);
-    var=mat(NFREQ*n+4,1); P=mat(nx,nx);
+    var=mat(NFREQ*n+4,1);
 
     /* prefit residuals */
-    nv=rescode(1,obs,n,rs,dts,vare,svh,nav,x,opt,ins,v,H,var,azel,vsat,
-               resp,&ns);
-
+    nv=rescode(1,obs,n,rs,dts,vare,svh,nav,x,opt,ins,v,H,var,azel,vsat,resp,&ns);
+    for (i=0;i<xnCl(insopt);i++) {
+        x[i]=1E-20;
+    }
     /* tightly coupled */
-    if (nv) {
-
-        matcpy(P,ins->P,ins->nx,ins->nx);
+    if (nv>=3) {
 
         /* measurement variance */
         for (i=0;i<nv;i++) R[i+i*nv]=var[i];
 
         /* ekf filter */
-        stat=filter(x,P,H,v,R,nx,nv);
+        stat=filter(x,Pp,H,v,R,nx,nv);
 
         if (stat) {
-            sprintf(msg,"ekf filter error info=%d",stat);
+            trace(2,"ekf filter error info=%d",stat);
             stat=0;
+            goto exit;
+        }
+        /* correction for receiver clock */
+        for (i=0;i<4;i++) ins->dtr[i]=x[irc+i]/CLIGHT;
+
+        for (i=iba;i<iba+nba;i++) x[i]*=factor;
+        for (i=ibg;i<ibg+nbg;i++) x[i]*=factor;
+
+        /* close loop for ins states */
+        clp(ins,insopt,x);
+
+        /* postfit residuals */
+        nv=rescode(1,obs,n,rs,dts,vare,svh,nav,x,opt,ins,v,H,var,azel,vsat,resp,&ns);
+
+        /* valid solutions */
+        if (nv&&(stat=valins(azel,vsat,n,opt,v,nv,x,R,4.0,msg))) {
+            ins->ns=(unsigned char)ns;
+            ins->age=0.0;
+            ins->gstat=opt->sateph==EPHOPT_SBAS?SOLQ_SBAS:SOLQ_SINGLE;
+
+            sol->stat=(unsigned char)ins->gstat;
+            sol->ns  =(unsigned char)ins->ns;
         }
         else {
-            inss.re[0]=ins->re[0]-x[IP+0];
-            inss.re[1]=ins->re[1]-x[IP+1];
-            inss.re[2]=ins->re[2]-x[IP+2];
-
-            for (i=0;i<4;i++) inss.dtr[i]=x[irc+i]/CLIGHT;
-
-            /* postfit residuals */
-            nv=rescode(1,obs,n,rs,dts,vare,svh,nav,x,opt,&inss,v,H,
-                       var,azel,vsat,resp,&ns);
-
-            /* valid solutions */
-            if (nv&&(stat=valins(azel,vsat,n,opt,v,nv,x,R,4.0,msg))) {
-
-                matcpy(ins->P,P,nx,nx);
-
-                /* close loop for ins states */
-                clp(ins,insopt,x);
-
-                /* correction for receiver clock */
-                for (i=0;i<4;i++) ins->dtr[i]=x[irc+i]/CLIGHT;
-
-                ins->ns=(unsigned char)ns;
-                ins->age=0.0;
-                ins->gstat=opt->sateph==EPHOPT_SBAS?SOLQ_SBAS:SOLQ_SINGLE;
-            }
-            else {
-                trace(2,"tightly coupled valid solutions fail\n");
-                stat=0;
-            }
+            trace(2,"tightly coupled valid solutions fail\n");
+            stat=0;
         }
     }
     else {
         trace(2,"no observation data\n");
         stat=0;
     }
+exit:
     free(v); free(H); free(var);
-    free(x); free(R); free(P);
+    free(x); free(R); 
     return stat;
+}
+/* update ins states----------------------------------------------------------*/
+static void updinsstate(const insstate_t *insp,const double *Pp,insstate_t *ins)
+{
+    /* update ins states if solution is ok */
+    matcpy(ins->re ,insp->re ,1,3);
+    matcpy(ins->ve ,insp->ve ,1,3);
+    matcpy(ins->ae ,insp->ae ,1,3);
+    matcpy(ins->Cbe,insp->Cbe,3,3);
+#if 1
+    matcpy(ins->ba,insp->ba,1,3);
+    matcpy(ins->bg,insp->bg,1,3);
+    matcpy(ins->Ma,insp->Ma,3,3);
+    matcpy(ins->Mg,insp->Mg,3,3);
+    matcpy(ins->lever,insp->lever,1,3);
+#endif
+    matcpy(ins->P,Pp,ins->nx,ins->nx);
+
+    ins->ns=insp->ns;
+    ins->age=0.0;
+    ins->gstat=insp->gstat;
+}
+/* ins estimate states by using pseudorange measurement-----------------------*/
+static int estinspr(const obsd_t *obs,int n,const double *rs,const double *dts,
+                    const double *vare,const int *svh,const nav_t *nav,
+                    const prcopt_t *opt,sol_t *sol, insstate_t *ins,double *azel,
+                    int *vsat,double *resp, char *msg)
+{
+    static insstate_t insp={0};
+    double *Pp;
+    int i,nx=ins->nx,info=1;
+
+    trace(3,"estinspr: time=%s n=%d\n",time_str(ins->time,4),n);
+
+    Pp=mat(ins->nx,ins->nx);
+    insp=*ins;
+
+    for (i=0;i<2;i++) {
+        matcpy(Pp,ins->P,nx,nx);
+
+        /* iteration for tightly coupled */
+        info&=itertc(obs,n,rs,dts,vare,svh,nav,opt,sol,Pp,azel,&insp,vsat,resp,msg);
+        if (!info) {
+            trace(2,"iteration for tightly coupled fail\n");
+            break;
+        }
+    }
+    if (info) {
+        sol->stat=(unsigned char)ins->gstat;
+        sol->ns  =(unsigned char)ins->ns;
+        updinsstate(&insp,Pp,ins);
+    }
+    free(Pp);
+    return info;
 }
 /* estimate receiver position ------------------------------------------------*/
 static int estpos(const obsd_t *obs, int n, const double *rs, const double *dts,
@@ -795,12 +844,24 @@ extern int pntpos(const obsd_t *obs, int n, const nav_t *nav,const prcopt_t *opt
     
     /* estimate receiver position with pseudorange */
     if (tc) {
-        stat=estinspr(obs,n,rs,dts,var,svh,nav,&opt_,
-                      sol,ins,azel_,vsat,resp,msg); /* tightly coupled */
+#if 1
+        /* single tightly coupled */
+        opt_.ionoopt=IONOOPT_IFLC;
+        if (!(stat=estinspr(obs,n,rs,dts,var,svh,nav,&opt_,sol,ins,azel_,vsat,resp,msg))) {
+            opt_.ionoopt=IONOOPT_BRDC;
+
+            stat=estinspr(obs,n,rs,dts,var,svh,nav,&opt_,sol,ins,azel_,vsat,resp,msg);
+            trace(3,"ionosphere option degraded\n");
+        }
+#else
+        /* single tightly coupled */
+        stat=estinspr(obs,n,rs,dts,var,svh,nav,&opt_,sol,ins,azel_,vsat,resp,msg);
+#endif
     }
     else {
-        stat=estpos(obs,n,rs,dts,var,svh,nav,&opt_,
-                    sol,azel_,vsat,resp,msg); /* common single position */
+        /* common single position */
+        stat=estpos(obs,n,rs,dts,var,svh,nav,&opt_,sol,azel_,
+                    vsat,resp,msg);
     }
     /* raim fde */
     if (!stat&&n>=6&&opt->posopt[4]) {

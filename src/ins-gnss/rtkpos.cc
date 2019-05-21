@@ -58,10 +58,10 @@
 #define THRES_AMB   1.5        /* threshold of constraint WL ambiguity */
 #define THRES_HOLDAMB 3.0      /* threshold of hold ambiguity */
 #define THRES_MW_JUMP 5.0      /* threshold of MW cycle slip detect*/
-#define MINFAILC      10       /* min counts of solution valid fail */
+#define MINFAILC      30       /* min counts of solution valid fail */
 #define UPDNEWSAT     1        /* update new satellites after update last epoch satellites */
 #define NOINSJACO     0        /* no add jacobians of ins states to ekf filter */
-#define DEGRADETC     1        /* degrade rtk-tc mode if update fail */
+#define DEGRADETC     0        /* degrade rtk-tc mode if update fail */
 #define DETECT_OUTLIER 1       /* detect outlier for double-differenced measurement data */
 #define THRES_L1L2RES 0.005    /* threshold of L1/L2 double difference residual for detecting outliers*/
 
@@ -1103,7 +1103,7 @@ static void udstate(rtk_t *rtk, const obsd_t *obs, const int *sat, const double 
     if ((rtk->opt.mode>PMODE_DGPS&&rtk->opt.mode<PMODE_INS_UPDATE)||tc) {
         udbias(rtk,tt,obs,sat,rs,iu,ir,ns,nav);
     }
-#if 1
+#if 0
     /* check counts of solution valid fail */
     if (rtk->failc>=MINFAILC) udreset(rtk);
 #endif
@@ -2013,10 +2013,11 @@ static void restamb(rtk_t *rtk, const double *bias, ddsat_t *ddsat,
 static void holdamb(rtk_t *rtk, insstate_t *ins, const double *xa,const ddsat_t *ddsat,
                     int ns)
 {
-    double *v,*H,*R,*x,*P;
-    register int i,f,info;
-    register int nb,nv=0;
-    register int sat1,sat2,ib1,ib2,tc,nx;
+    double *v,*H,*R,*x,*P,*r;
+    int i,f,info;
+    int nb,nv=0;
+    int sat1,sat2,ib1,ib2,tc,nx;
+    ddamb_t *pamb;
 
     trace(3,"holdamb :ns=%d\n",ns);
 
@@ -2029,6 +2030,7 @@ static void holdamb(rtk_t *rtk, insstate_t *ins, const double *xa,const ddsat_t 
     tc?P=rtk->ins.P:P=rtk->P;
 
     v=mat(nb,1); H=zeros(nb,nx);
+    r=mat(nb,1);
 
     for (i=0;i<ns;i++) {
         sat1=ddsat[i].sat1; /* reference satellite */
@@ -2049,7 +2051,23 @@ static void holdamb(rtk_t *rtk, insstate_t *ins, const double *xa,const ddsat_t 
 
         /* constraint to fixed ambiguity */
         v[nv]=(xa[ib1]-xa[ib2])-(x[ib1]-x[ib2]);
-
+#if 1
+        /* get double difference ambiguity of precious epoch */
+        pamb=getddamb(&rtk->bias,sat1,sat2,f);
+        if (!pamb) {
+            /* new dd-ambiguity */
+            r[nv]=10.0*VAR_HOLDAMB;
+        }
+        else {
+            /* already hold */
+            if (fabs(timediff(pamb->time,rtk->sol.time))<1.5&&fabs(pamb->bias-(xa[ib1]-xa[ib2]))<0.5) {
+                r[nv]=VAR_HOLDAMB;
+            }
+            else r[nv]=3.0*VAR_HOLDAMB;
+        }
+#else
+        r[nv]=VAR_HOLDAMB;
+#endif
         /* outlier detect */
         if (fabs(v[nv])>THRES_HOLDAMB) continue;
 
@@ -2059,11 +2077,12 @@ static void holdamb(rtk_t *rtk, insstate_t *ins, const double *xa,const ddsat_t 
     }
     if (nv>0) {
         R=zeros(nv,nv);
-        for (i=0;i<nv;i++) R[i+i*nv]=(rtk->bias.inherit?VAR_HOLDAMB*10.0:VAR_HOLDAMB);
-
+        for (i=0;i<nv;i++) {
+            R[i+i*nv]=(rtk->bias.inherit?3.0*r[i]:r[i]);
+        }
         /* close-loop states set to zero */
         if (tc) {
-            for (i=0;i<xnCl(&rtk->opt.insopt);i++) x[i]=0.0;
+            for (i=0;i<xnCl(&rtk->opt.insopt);i++) x[i]=1E-20;
         }
         /* update states with constraints */
         if ((info=filter(x,P,H,v,R,nx,nv))) {
@@ -2076,6 +2095,7 @@ static void holdamb(rtk_t *rtk, insstate_t *ins, const double *xa,const ddsat_t 
         free(R);
     }
     free(v); free(H);
+    free(r);
 }
 /* store WL ambiguity---------------------------------------------------------*/
 static int storeambwl(rtk_t *rtk, const ddsat_t *ddsat, int nw,const double *bias)
@@ -2253,7 +2273,7 @@ static int inheritamb(rtk_t *rtk, ddsat_t *ddsat,const double *y,const double *Q
     }
     s[1]=s[0]=1.0;
     if (k>=3) {
-        s[1]=99.0;
+        s[1]=99.9;
         s[0]=1.00;
         trace(3,"inherit ambiguity=\n");
         tracemat(3,b,1,nb,12,6);
@@ -2361,14 +2381,14 @@ static int resamb_LAMBDA(rtk_t *rtk, double *bias, double *xa, ddsat_t *ddsat,in
             }
             /* close loop estimated states */
             if (tc) {
-                for (i=0;i<xnCl(insopt);i++) xb[i]=1E-10;
+                for (i=0;i<xnCl(insopt);i++) xb[i]=1E-20;
             }
             for (i=0;i<nb;i++) {
                 /* fix ambiguity */
                 bias[i]=b[i];
 
                 if (fabs(y[na+i]-b[i])>THRES_HOLDAMB) {
-                    y[na+i]=1E-3;
+                    y[na+i]=1E-5;
                 }
                 else {
                     /* ambiguity residuals */
@@ -2504,10 +2524,11 @@ static int valpos(rtk_t *rtk, const double *v, const double *R, const int *vflg,
     return stat;
 }
 /* validation of ins solutions------------------------------------------------*/
-static int valins(const prcopt_t *opt,const double *x)
+static int valins(const prcopt_t *opt,const double *x,const insstate_t *ins)
 {
     const insopt_t *insopt=&opt->insopt;
-    register int nba=0,iba=0,nbg=0,ibg=0;
+    register int nba=0,iba=0,nbg=0,ibg=0,i;
+    static double ratio=1.5;
 
     trace(3,"valins:\n");
 
@@ -2602,7 +2623,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
     /* backup estimated estates */
     matcpy(xp,x,nx,1);
     if (tc) {
-        for (i=0;i<xnCl(insopt);i++) xp[i]=1E-10;
+        for (i=0;i<xnCl(insopt);i++) xp[i]=1E-20;
     }
     ny=ns*nf*2+2;
     v=mat(ny,1); H=zeros(nx,ny);
@@ -2614,7 +2635,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
     /* add 2 iterations for baseline-constraint moving-base */
     niter=opt->niter+(opt->mode==PMODE_MOVEB&&opt->baseline[0]>0.0?2:0);
 
-    for (i=0;i<(tc?1:niter);i++) {
+    for (i=0;i<niter;i++) {
         tc?insp2antp(&insp,rr):matcpy(rr,xp,1,3);
 
         /* undifference residuals for rover */
@@ -2645,7 +2666,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
                 matcpy(dx,xp,1,xnCl(insopt));
             }
             for (j=0;j<xnCl(insopt);j++) {
-                xp[j]=1E-10;
+                xp[j]=1E-20;
             }
         }
     }
@@ -2658,7 +2679,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
                  R,vflg,rr,Ri,Rj,nb,&b,refsat);
 
         /* validation of float solution */
-        if (nv&&valpos(rtk,v,R,vflg,nv,&m,4.0)&&(tc?valins(opt,dx):true)) {
+        if (nv&&valpos(rtk,v,R,vflg,nv,&m,4.0)&&(tc?valins(opt,dx,ins):true)) {
 
             /* update state and covariance matrix */
             matcpy(P,Pp,nx,nx);
@@ -2693,7 +2714,9 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
                 }
             }
         }
-        else stat=SOLQ_NONE;
+        else {
+            stat=SOLQ_NONE;
+        }
     }
     /* resolve integer ambiguity by WL-NL */
     if (stat!=SOLQ_NONE&&rtk->opt.modear==ARMODE_WLNLC) {
@@ -2730,7 +2753,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
                      NULL,NULL,NULL);
 
             /* validation of fixed solution */
-            if (nv&&valpos(rtk,v,R,vflg,nv,&m,4.0)&&(tc?valins(opt,xa):true)) {
+            if (nv&&valpos(rtk,v,R,vflg,nv,&m,4.0)&&(tc?valins(opt,xa,ins):true)) {
 
                 /* hold integer ambiguity */
                 if (++rtk->nfix>=rtk->opt.minfix&&
@@ -2766,7 +2789,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
         ddcov(nb,b,Ri,Rj,nv,R);
         if (tc) {
             for (j=0;j<xnCl(insopt);j++) {
-                x[j]=1E-10;
+                x[j]=1E-20;
             }
         }
         /* kalman filter */
@@ -2780,7 +2803,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
         }
     }
 #endif
-    if (tc) {
+    if (tc&&stat!=SOLQ_NONE) {
         /* update ins states if solution is ok */
         matcpy(ins->re,insp.re,1,3);
         matcpy(ins->ve,insp.ve,1,3);
@@ -3068,7 +3091,7 @@ extern int rtkpos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav)
     trace(5,"nav=\n"); tracenav(5,nav);
 
     /* check tc-mode */
-    tcs=opt->mode==PMODE_INS_TGNSS&&insopt->tc==INSTC_SINGLE;
+    tcs=opt->mode==PMODE_INS_TGNSS&&insopt->tc>=INSTC_SINGLE;
     tcp=opt->mode==PMODE_INS_TGNSS&&insopt->tc==INSTC_PPK;
 
     if (n<=0) return 0;
@@ -3121,7 +3144,7 @@ extern int rtkpos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav)
     if (fabs(rtk->tt)<DTTOL&&opt->mode<=PMODE_FIXED) return stat;
 
     /* single point positioning */
-    if (opt->mode==PMODE_SINGLE||tcs) {
+    if (opt->mode==PMODE_SINGLE||insopt->tc==INSTC_SINGLE) {
         outsolstat(rtk);
         return 1;
     }

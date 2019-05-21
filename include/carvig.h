@@ -59,7 +59,7 @@ extern "C"{
 #else
 #define EXPORT
 #endif
-#define ENACMP
+//#define ENACMP
 #define ENAOPENCV   0                   /* enable opencv library */
 
 /* constants -----------------------------------------------------------------*/
@@ -77,7 +77,7 @@ extern "C"{
 #define LAPACK
 #define TRACE                           /* trace information for debug */
 #define TRACE_INS     1                 /* trace ins updates information */
-#define TRACE_STDERR  1                 /* trace information to stderr if set */
+#define TRACE_STDERR  0                 /* trace information to stderr if set */
 #define VIG_TRACE_MAT 1                 /* trace matrix for debugs */
 #define MAXBUFF     4096                /* size of line buffer */
 #define MAXHIST     256                 /* size of history buffer */
@@ -234,9 +234,15 @@ extern "C"{
 #define NSYS        (NSYSGPS+NSYSGLO+NSYSGAL+NSYSQZS+NSYSCMP+NSYSIRN+NSYSLEO) /* number of systems */
 #define NUMSYS      7
 
+#ifdef ENASBS
 #define MINPRNSBS   120                 /* min satellite PRN number of SBAS */
 #define MAXPRNSBS   142                 /* max satellite PRN number of SBAS */
 #define NSATSBS     (MAXPRNSBS-MINPRNSBS+1) /* number of SBAS satellites */
+#else
+#define MINPRNSBS   0
+#define MAXPRNSBS   0
+#define NSATSBS     0                     
+#endif
 
 #define MAXSAT      (NSATGPS+NSATGLO+NSATGAL+NSATQZS+NSATCMP+NSATIRN+NSATSBS+NSATLEO)
                                         /* max satellite number (1 to MAXSAT) */

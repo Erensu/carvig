@@ -8,7 +8,7 @@
 
 /* constants-----------------------------------------------------------------*/
 #define INTKEEPALIVE 1000             /* keep alive interval (ms) */
-#define OUTSOLFRQ    100              /* frequency of output ins solutions */
+#define OUTSOLFRQ    50               /* frequency of output ins solutions */
 #define SOL_OUTPUT_FILE 1             /* output solution to file */
 #define MINVEL        5.0             /* min velocity for initial ins states */
 #define MAXGYRO       (30.0*D2R)      /* max rotation speed value for initial */
@@ -345,9 +345,6 @@ static int wrt_solution(rtk_t *rtk,const solopt_t *solopt)
             strwrite(&moni,buff,n);
             c=0;
         }
-#if 1   /* for debugs */
-        fprintf(stderr,"%s",buff);
-#endif
     }
     return n;
 }
