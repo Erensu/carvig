@@ -441,12 +441,8 @@ static int itertc(const obsd_t *obs,int n,const double *rs,const double *dts,
                   int *vsat,double *resp, char *msg)
 {
     const insopt_t *insopt=&opt->insopt;
-    const static double factor=0.333;
-    int i,nx,nv,ns,stat=0,irc=0,nba,nbg,iba,ibg;
+    int i,nx,nv,ns,stat=0,irc=0;
     double *x,*R,*v,*H,*var;
-
-    nba=xnBa(insopt); iba=xiBa(insopt);
-    nbg=xnBg(insopt); ibg=xiBg(insopt);
 
     nx=xnX(insopt);
     irc=xiRc(insopt);
@@ -476,9 +472,6 @@ static int itertc(const obsd_t *obs,int n,const double *rs,const double *dts,
         }
         /* correction for receiver clock */
         for (i=0;i<4;i++) ins->dtr[i]=x[irc+i]/CLIGHT;
-
-        for (i=iba;i<iba+nba;i++) x[i]*=factor;
-        for (i=ibg;i<ibg+nbg;i++) x[i]*=factor;
 
         /* close loop for ins states */
         clp(ins,insopt,x);
@@ -517,7 +510,8 @@ static void updinsstate(const insstate_t *insp,const double *Pp,insstate_t *ins)
     matcpy(ins->ve ,insp->ve ,1,3);
     matcpy(ins->ae ,insp->ae ,1,3);
     matcpy(ins->Cbe,insp->Cbe,3,3);
-#if 1
+#if 0
+    /* no update ba/bg/Ma/Mg */
     matcpy(ins->ba,insp->ba,1,3);
     matcpy(ins->bg,insp->bg,1,3);
     matcpy(ins->Ma,insp->Ma,3,3);
