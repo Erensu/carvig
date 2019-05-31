@@ -3170,7 +3170,8 @@ extern int rtkpos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav)
             outsolstat(rtk);
             return 0;
         }
-        if (opt->mode==PMODE_INS_TGNSS) {
+        /* retry single-tc mode */
+        if (opt->mode==PMODE_INS_TGNSS&&insopt->tc>INSTC_SINGLE) {
             stat=pntpos(opt->adjobs?obsd:obs,nu,nav,
                         &rtk->opt,
                         &rtk->sol,
