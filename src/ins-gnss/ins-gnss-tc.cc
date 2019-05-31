@@ -21,9 +21,9 @@
 #define MINVEL       3.0          /* min velocity for initial ins states */
 #define MAXGYRO      (30.0*D2R)   /* max rotation speed value for initial */
 #define MAXDIFF      30.0         /* max time difference between solution */
-#define REBOOT       0            /* ins tightly coupled reboot if always update fail */
+#define REBOOT       1            /* ins tightly coupled reboot if always update fail */
 #define CHKNUMERIC   1            /* check numeric for given value */
-#define RECHK_ATT    1            /* recheck attitude of imu body */
+#define RECHK_ATT    0            /* recheck attitude of imu body */
 #define UPD_INS_N    0            /* updates ins states in e-frame */
 
 /* solution convert to velocity----------------------------------------------*/
@@ -47,7 +47,7 @@ static int chkvb(const insstate_t *ins)
 #if 1
     double vb[3];
     matmul("TN",3,1,3,1.0,ins->Cbe,ins->ve,0.0,vb);
-    return fabs(vb[1])<MINVEL*10.0&&fabs(vb[2])<MINVEL*10.0;
+    return fabs(vb[1])<MINVEL&&fabs(vb[2])<MINVEL;
 #else
     return 0;
 #endif

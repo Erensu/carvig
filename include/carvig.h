@@ -1960,7 +1960,8 @@ typedef struct {        /* satellite status type */
     unsigned char slip[NFREQ]; /* cycle-slip flag */
     unsigned char sfrq[NFREQ]; /* single-frq flag */
     unsigned char half[NFREQ]; /* half-cycle valid flag */
-    int lock [NFREQ];   /* lock counter of phase */
+    int lock[NFREQ];   /* lock counter of phase */
+    int fixc[NFREQ];   /* fix count of phase bias */
     unsigned int index[NFREQ]; /* index of satellite in phase double difference residuals vector */
     unsigned int cind [NFREQ]; /* index of satellite in code double difference residuals vector */
     unsigned int outc [NFREQ]; /* obs outage counter of phase */

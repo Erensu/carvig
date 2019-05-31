@@ -457,7 +457,7 @@ static int itertc(const obsd_t *obs,int n,const double *rs,const double *dts,
         x[i]=1E-20;
     }
     /* tightly coupled */
-    if (nv>=3) {
+    if (nv>5) {
 
         /* measurement variance */
         for (i=0;i<nv;i++) R[i+i*nv]=var[i];
@@ -539,7 +539,7 @@ static int estinspr(const obsd_t *obs,int n,const double *rs,const double *dts,
     Pp=mat(ins->nx,ins->nx);
     insp=*ins;
 
-    for (i=0;i<2;i++) {
+    for (i=0;i<3;i++) {
         matcpy(Pp,ins->P,nx,nx);
 
         /* iteration for tightly coupled */
