@@ -59,7 +59,7 @@ extern "C"{
 #else
 #define EXPORT
 #endif
-//#define ENACMP
+#define ENACMP
 #define ENAOPENCV   0                   /* enable opencv library */
 
 /* constants -----------------------------------------------------------------*/

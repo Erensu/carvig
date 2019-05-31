@@ -40,6 +40,7 @@
 *-----------------------------------------------------------------------------*/
 #include <stdarg.h>
 #include <carvig.h>
+#include <include/carvig.h>
 
 /* constants/macros ----------------------------------------------------------*/
 #define VAR_POS     SQR(30.0)  /* initial variance of receiver pos (m^2) */
@@ -2992,6 +2993,9 @@ extern void rtkinit(rtk_t *rtk, const prcopt_t *opt)
                 case INSLC_RTK   : rtk->opt.mode=PMODE_KINEMA    ; break;
             }
         }
+        if (opt->mode==PMODE_INS_TGNSS) {
+            fprintf(stderr,"best choice for dual frequency\n");
+        }
         rtk->ins.rtkp=rtk;
     }
     else {
@@ -3023,11 +3027,17 @@ extern void rtkfree(rtk_t *rtk)
     if (rtk->ins.xb) free(rtk->ins.xb); rtk->ins.xb=NULL;
     if (rtk->ins.xa) free(rtk->ins.xa); rtk->ins.xa=NULL;
 
-    if (rtk->ins.gmeas.data) free(rtk->ins.gmeas.data); rtk->ins.gmeas.data=NULL;
+    if (rtk->ins.gmeas.data) {
+        free(rtk->ins.gmeas.data);
+    }
+    rtk->ins.gmeas.data=NULL;
     rtk->ins.nx=rtk->ins.nb=0;
     rtk->ins.gmeas.n=rtk->ins.gmeas.nmax=0;
 
-    if (rtk->bias.amb) free(rtk->bias.amb); rtk->bias.amb=NULL;
+    if (rtk->bias.amb) {
+        free(rtk->bias.amb);
+    }
+    rtk->bias.amb=NULL;
 }
 /* precise positioning ---------------------------------------------------------
 * input observation data and navigation message, compute rover position by
@@ -3113,8 +3123,7 @@ extern int rtkpos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav)
     if (n<=0) return 0;
 
     /* set base staion position */
-    if (opt->refpos<=POSOPT_RINEX&&opt->mode!=PMODE_SINGLE&&
-        opt->mode!=PMODE_MOVEB) {
+    if (opt->refpos<=POSOPT_RINEX&&opt->mode!=PMODE_SINGLE&&opt->mode!=PMODE_MOVEB) {
         for (i=0;i<6;i++) {
             rtk->rb[i]=i<3?opt->rb[i]:0.0;
         }
@@ -3125,8 +3134,9 @@ extern int rtkpos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav)
 
     /* for rover and base observation data */
     for (i=0;i<nu+nr&&opt->adjobs;i++) {
-
         memcpy(&obsd[i],&obs[i],sizeof(obsd_t));
+
+        /* adjust observation */
         if (adjsind(opt,&obs[i],&fi,&fj,&fk)) {
             trace(4,"adjust observation data signal index ok\n");
         }
@@ -3156,9 +3166,17 @@ extern int rtkpos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav)
                 NULL,rtk->ssat,msg)) {
         errmsg(rtk,"point pos error (%s)\n",msg);
 
-        if (!rtk->opt.dynamics) {
+        if (!rtk->opt.dynamics&&opt->mode<=PMODE_PPP_FIXED) {
             outsolstat(rtk);
             return 0;
+        }
+        if (opt->mode==PMODE_INS_TGNSS) {
+            stat=pntpos(opt->adjobs?obsd:obs,nu,nav,
+                        &rtk->opt,
+                        &rtk->sol,
+                        &rtk->ins,
+                        NULL,NULL,msg);
+            goto exit;
         }
     }
     if (time.time!=0) rtk->tt=timediff(rtk->sol.time,time);

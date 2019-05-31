@@ -457,7 +457,7 @@ static int itertc(const obsd_t *obs,int n,const double *rs,const double *dts,
         x[i]=1E-20;
     }
     /* tightly coupled */
-    if (nv>5) {
+    if (nv>4) {
 
         /* measurement variance */
         for (i=0;i<nv;i++) R[i+i*nv]=var[i];

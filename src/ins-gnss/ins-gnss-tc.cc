@@ -55,7 +55,7 @@ static int chkvb(const insstate_t *ins)
 /* initialization position mode/ionosphere and troposphere option------------*/
 static void initrtkpos(rtk_t *rtk,prcopt_t *prcopt)
 {
-    prcopt->mode   =PMODE_SINGLE;
+    prcopt->mode   =PMODE_KINEMA;
     prcopt->ionoopt=IONOOPT_BRDC;
     prcopt->tropopt=TROPOPT_SAAS;
     rtkinit(rtk,prcopt);

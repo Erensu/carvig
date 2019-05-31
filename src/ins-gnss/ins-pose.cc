@@ -18,7 +18,7 @@
 
 /* constants ----------------------------------------------------------------*/
 #define ORDERS        10           /* orders of approximate exponential of matrix */
-#define MAXRES_POSE        10.0*D2R     /* max residual for pose filter */
+#define MAXRES_POSE   10.0*D2R     /* max residual for pose filter */
 #define VARPOSE       30.0*D2R     /* variance of pose measurement */
 #define MAXTIMEDIFF   1.0          /* max difference between ins and pose measurement time */
 #define JACOB_LEFT    1            /* use left jacobians of misalignment of camera to imu */
