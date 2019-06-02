@@ -110,12 +110,13 @@ int main(int argc, char **argv)
     filopt_t filopt={""};
     gtime_t ts={0},te={0};
     double tint=0.0;
-    int i,n,ret;
+    int i,n,ret,port=0;
     char *infile[MAXFILE],*outfile="",file[1024];
 
     for (i=1;i<argc;i++) {
         if      (!strcmp(argv[i],"-p")&&i+1<argc) strcpy(file,argv[++i]);
         else if (!strcmp(argv[i],"-o")&&i+1<argc) outfile=argv[++i];
+        else if (!strcmp(argv[i],"-m")&&i+1<argc) port=atoi(argv[++i]);
         else printhelp();
     }
     /* load options file */
@@ -144,7 +145,7 @@ int main(int argc, char **argv)
         showmsg("error : no input file");
         return -2;
     }
-    ret=postpos(ts,te,tint,0.0,&prcopt,&solopt,&filopt,infile,n,outfile,"","");
+    ret=postpos(ts,te,tint,0.0,&prcopt,&solopt,&filopt,infile,n,outfile,"","",port);
 
     if (!ret) fprintf(stderr,"%40s\r","");
     for (i=0;i<MAXFILE;i++) {

@@ -42,7 +42,7 @@ static int readkarl(FILE *fp,solbuf_t *solbuf)
         stamp=stamp*1E-9;
         sol.time.sec =stamp-(time_t)stamp;
         sol.time.time=(time_t)stamp;
-        sol.stat=SOLQ_GRTH;
+        sol.stat=SOLQ_NONE;
 
         pos[0]*=D2R; pos[1]*=D2R;
         pos2ecef(pos,sol.rr);

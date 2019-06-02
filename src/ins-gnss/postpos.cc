@@ -47,6 +47,7 @@
 
 #define MAXPRCDAYS  100          /* max days of continuous processing */
 #define MAXINFILE   1000         /* max number of input files */
+#define INTKEEPALIVE 1000        /* keep alive interval (ms) */
 
 /* constants/global variables ------------------------------------------------*/
 
@@ -64,6 +65,10 @@ static int isbs  =0;            /* current sbas message index */
 static int ilex  =0;            /* current lex message index */
 static int revs  =0;            /* analysis direction (0:forward,1:backward) */
 static int aborts=0;            /* abort status */
+static int mport =0;            /* port of monitor */
+static int keepalive=1;         /* keep alive flag */
+static int timeout  =10000;     /* timeout time (ms) */
+static int reconnect=10000;     /* reconnect interval (ms) */
 static sol_t *solf;             /* forward solutions */
 static sol_t *solb;             /* backward solutions */
 static double *rbf;             /* forward base positions */
@@ -76,7 +81,36 @@ static char rtcm_file[1024]=""; /* rtcm data file */
 static char rtcm_path[1024]=""; /* rtcm data path */
 static rtcm_t rtcm;             /* rtcm control struct */
 static FILE *fp_rtcm=NULL;      /* rtcm data file pointer */
+static stream_t moni={0};       /* monitor stream */
 
+/* thread to send keep alive for monitor port --------------------------------*/
+static void *sendkeepalive(void *arg)
+{
+    trace(3,"sendkeepalive: start\n");
+
+    while (keepalive) {
+        strwrite(&moni,(unsigned char *)"\r",1);
+        sleepms(INTKEEPALIVE);
+    }
+    trace(3,"sendkeepalive: stop\n");
+    return NULL;
+}
+/* open monitor port ---------------------------------------------------------*/
+static int openmoni(int port)
+{
+    pthread_t thread;
+    char path[64];
+
+    trace(3,"openmomi: port=%d\n",port);
+
+    sprintf(path,":%d",port);
+
+    if (!stropen(&moni,STR_TCPSVR,STR_MODE_RW,path)) return 0;
+    strsettimeout(&moni,timeout,reconnect);
+    keepalive=1;
+    pthread_create(&thread,NULL,sendkeepalive,NULL);
+    return 1;
+}
 /* show message and check break ----------------------------------------------*/
 static int checkbrk(const char *format, ...)
 {
@@ -90,6 +124,19 @@ static int checkbrk(const char *format, ...)
     else if (*proc_rov ) sprintf(p," (%s)",proc_rov );
     else if (*proc_base) sprintf(p," (%s)",proc_base);
     return showmsg(buff);
+}
+/* close monitor port---------------------------------------------------------*/
+static int close_moni(stream_t *moni)
+{
+    trace(3,"closemoni:\n");
+    keepalive=0;
+
+    /* send disconnect message */
+    strwrite(moni,(unsigned char *)MSG_DISCONN,strlen(MSG_DISCONN));
+
+    /* wait fin from clients */
+    sleepms(1000);
+    strclose(moni);
 }
 /* output reference position -------------------------------------------------*/
 static void outrpos(FILE *fp, const double *r, const solopt_t *opt)
@@ -320,6 +367,19 @@ static int inputobs(obsd_t *obs, int solq, const prcopt_t *popt)
     }
     return n;
 }
+/* write solution status output stream ---------------------------------------*/
+static int wrt_solution(rtk_t *rtk,const solopt_t *solopt)
+{
+    unsigned char buff[1024];
+    int n=0;
+
+    /* output solution to monitor */
+    if (moni.port) {
+        n=outsols(buff,&rtk->sol,rtk->rb,solopt,&rtk->ins,&rtk->opt.insopt,1);
+        strwrite(&moni,buff,n);
+    }
+    return n;
+}
 /* process positioning -------------------------------------------------------*/
 static void procpos(FILE *fp, const prcopt_t *popt, const solopt_t *sopt,
                     int mode)
@@ -366,6 +426,8 @@ static void procpos(FILE *fp, const prcopt_t *popt, const solopt_t *sopt,
         if (mode==0) { /* forward/backward */
             if (!solstatic) {
                 outsol(fp,&rtk.sol,rtk.rb,sopt,NULL,&popt->insopt);
+
+                wrt_solution(&rtk,sopt);
             }
             else if (time.time==0||pri[rtk.sol.stat]<=pri[sol.stat]) {
                 sol=rtk.sol;
@@ -1194,6 +1256,7 @@ static int execses_b(gtime_t ts, gtime_t te, double ti, const prcopt_t *popt,
 *          char   *outfile  I   output file ("":stdout, see below)
 *          char   *rov      I   rover id list        (separated by " ")
 *          char   *base     I   base station id list (separated by " ")
+*          int    port      I   port of monitor
 * return : status (0:ok,0>:error,1:aborted)
 * notes  : input files should contain observation data, navigation data, precise 
 *          ephemeris/clock (optional), sbas log file (optional), ssr message
@@ -1228,7 +1291,7 @@ static int execses_b(gtime_t ts, gtime_t te, double ti, const prcopt_t *popt,
 extern int postpos(gtime_t ts, gtime_t te, double ti, double tu,
                    const prcopt_t *popt, const solopt_t *sopt,
                    const filopt_t *fopt, char **infile, int n, char *outfile,
-                   const char *rov, const char *base)
+                   const char *rov, const char *base,int port)
 {
     gtime_t tts,tte,ttte;
     filopt_t fopt_=*fopt;
@@ -1237,7 +1300,13 @@ extern int postpos(gtime_t ts, gtime_t te, double ti, double tu,
     char *ifile[MAXINFILE],ofile[1024],*ext;
     
     trace(3,"postpos : ti=%.0f tu=%.0f n=%d outfile=%s\n",ti,tu,n,outfile);
-    
+
+    mport=port;
+
+    /* open monitor */
+    if (port&&!openmoni(mport)) {
+        fprintf(stderr,"open monitor fail\n");
+    }
     /* open processing session */
     if (!openses(popt,sopt,fopt,&navs,&pcvss,&pcvsr)) return -1;
     
@@ -1334,6 +1403,8 @@ extern int postpos(gtime_t ts, gtime_t te, double ti, double tu,
     }
     /* close processing session */
     closeses(&navs,&pcvss,&pcvsr);
-    
+
+    /* close monitor */
+    if (mport) close_moni(&moni);
     return stat;
 }

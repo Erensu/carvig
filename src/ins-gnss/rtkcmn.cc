@@ -1556,8 +1556,6 @@ extern int filter(double *x, double *P, const double *H, const double *v,
     double *x_,*xp_,*P_,*Pp_,*H_;
     int i,j,k,info,*ix;
 
-    for (i=0;i<n;i++) if (x[i]==0.0) x[i]=1E-20;
-    
     ix=imat(n,1); for (i=k=0;i<n;i++) {
         if ((x[i]!=0.0&&P[i+i*n]>0.0)&&x[i]!=DISFLAG) ix[k++]=i;
     }
@@ -3572,6 +3570,7 @@ extern void trace(int level, const char *format, ...)
     if (level<=1) {
         va_start(ap,format); vfprintf(stderr,format,ap); va_end(ap);
     }
+    if (level==4) return;
 #if TRACE_STDERR
     fp_trace=stderr;
 #endif
@@ -3643,9 +3642,9 @@ extern void traceobs(int level, const obsd_t *obs, int n)
     for (i=0;i<n;i++) {
         time2str(obs[i].time,str,3);
         satno2id(obs[i].sat,id);
-        fprintf(fp_trace," (%2d) %s %-3s rcv%d %13.3f %13.3f %13.3f"
+        fprintf(fp_trace," (%2d) %s %-3s %-3d rcv%d %13.3f %13.3f %13.3f"
                         " %13.3f %3d %3d %3d %3d %3.1f %3.1f\n",
-              i+1,str,id,obs[i].rcv,obs[i].L[0],obs[i].L[1],obs[i].P[0],
+              i+1,str,id,obs[i].sat,obs[i].rcv,obs[i].L[0],obs[i].L[1],obs[i].P[0],
               obs[i].P[1],obs[i].LLI[0],obs[i].LLI[1],obs[i].code[0],
               obs[i].code[1],obs[i].SNR[0]*0.25,obs[i].SNR[1]*0.25);
     }

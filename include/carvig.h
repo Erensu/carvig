@@ -77,7 +77,7 @@ extern "C"{
 #define LAPACK
 #define TRACE                           /* trace information for debug */
 #define TRACE_INS     1                 /* trace ins updates information */
-#define TRACE_STDERR  0                 /* trace information to stderr if set */
+#define TRACE_STDERR  1                 /* trace information to stderr if set */
 #define VIG_TRACE_MAT 1                 /* trace matrix for debugs */
 #define MAXBUFF     4096                /* size of line buffer */
 #define MAXHIST     256                 /* size of history buffer */
@@ -124,7 +124,7 @@ extern "C"{
 #define EFACT_GLO   1.5                 /* error factor: GLONASS */
 #define EFACT_GAL   1.0                 /* error factor: Galileo */
 #define EFACT_QZS   1.0                 /* error factor: QZSS */
-#define EFACT_CMP   1.0                 /* error factor: BeiDou */
+#define EFACT_CMP   3.0                 /* error factor: BeiDou */
 #define EFACT_IRN   1.5                 /* error factor: IRNSS */
 #define EFACT_SBS   3.0                 /* error factor: SBAS */
 
@@ -448,10 +448,10 @@ extern "C"{
 #define SOLQ_PPP     6                  /* solution status: PPP */
 #define SOLQ_DR      7                  /* solution status: dead reconing */
 #define SOLQ_DOP     8                  /* solution status: doppler measurement aid */
-#define SOLQ_INHERIT 9                  /* solution status: ambiguity inherit fix status */
-#define SOLQ_ROUND   10                 /* solution status: ambiguity round fix */
+#define SOLQ_WLFIX   9                  /* solution status: WL ambiguity fix status */
+#define SOLQ_INHERIT_WL 10              /* solution status: WL ambiguity inherit fix */
 #define SOLQ_VO      11                 /* solution status: visual odometry status aid */
-#define SOLQ_GRTH    12                 /* solution status: ground truth status */
+#define SOLQ_INHERIT    12              /* solution status: ambiguity inherit fix */
 #define SOLQ_WAAS    13                 /* solution status: solution calculated using corrections from an WAAS */
 #define SOLQ_PROP    14                 /* solution status: propagated by a kalman filter without new observations */
 #define SOLQ_OMIN    15                 /* solution status: OmniSTAR VBS position */
@@ -1976,7 +1976,8 @@ typedef struct {        /* satellite status type */
     gtime_t pt[2][NFREQ]; /* previous carrier-phase time */
     double  ph[2][NFREQ]; /* previous carrier-phase observable (cycle) */
     double  sdi[NFREQ];   /* single-differenced pseudorange observable by INS */
-    double  sdg[NFREQ];   /* single-differenced pseudorange observable by GNSS */
+    double  sdp[NFREQ];   /* code single-differenced pseudorange observable by GNSS */
+    double  sdc[NFREQ];   /* cycle single-differenced pseudorange observable by GNSS */
 } ssat_t;
 
 typedef struct {        /* ambiguity control type */
@@ -2000,7 +2001,7 @@ typedef struct {        /* double-difference ambiguity type */
 typedef struct {        /* double-difference satellite */
     int sat1,sat2;      /* double difference satellite no. */
     int f;              /* frequency no. */
-    int flag;
+    int flag;           /* inherit flag (0: inherit, 1: no inherit) */
 } ddsat_t;
 
 typedef struct {
@@ -2027,7 +2028,7 @@ typedef struct {        /* RTK control/result type */
     ambc_t ambc[MAXSAT];         /* ambiguity control */
     ssat_t ssat[MAXSAT];         /* satellite status */
     insstate_t ins;              /* ins states */
-    amb_t bias;                  /* double-difference ambiguity list */
+    amb_t bias;                  /* N1/N2 double-difference ambiguity list */
     amb_t wlbias;                /* WL double-difference ambiguity list */
     ddsat_t sat[MAXSAT];         /* double difference satellite list */
 } rtk_t;
@@ -2407,6 +2408,9 @@ EXPORT int  lsq   (const double *A, const double *y, int n, int m, double *x,
                    double *Q);
 EXPORT int  filter(double *x, double *P, const double *H, const double *v,
                    const double *R, int n, int m);
+EXPORT void freekix();
+EXPORT int *getkix();
+EXPORT int  getnix();
 EXPORT int  smoother(const double *xf, const double *Qf, const double *xb,
                      const double *Qb, int n, double *xs, double *Qs);
 EXPORT void lsmooth3(double *in, double *out, int N);
@@ -2887,7 +2891,7 @@ EXPORT int insinirtobs(rtksvr_t *svr,const obsd_t *obs,int n,const imud_t *imu);
 EXPORT int postpos(gtime_t ts, gtime_t te, double ti, double tu,
                    const prcopt_t *popt, const solopt_t *sopt,
                    const filopt_t *fopt, char **infile, int n, char *outfile,
-                   const char *rov, const char *base);
+                   const char *rov, const char *base,int port);
 /* precise point positioning -------------------------------------------------*/
 EXPORT void pppos(rtk_t *rtk, const obsd_t *obs, int n, const nav_t *nav);
 EXPORT int pppnx(const prcopt_t *opt);

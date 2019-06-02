@@ -155,7 +155,7 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
                    const imud_t *imu,rtk_t *rtk,insstate_t *ins,int upd)
 {
     int i,nx=ins->nx,info=1,nu,nr,flag;
-    double *P,dt;
+    double dt;
     const insopt_t* insopt=&opt->insopt;
 
     if (imu==NULL) return 0;
@@ -184,7 +184,6 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
         trace(2,"ins mechanization update fail\n");
         return 0;
     }
-    P=zeros(nx,nx);
     propinss(ins,insopt,ins->dt,ins->x,ins->P);
 
     /* check variance of estimated position */
@@ -196,6 +195,8 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
         info=1;
     }
     else {
+        for (i=0;i<6;i++) rtk->sol.pqr[i]=rtk->sol.qr[i];
+        rtk->sol.pstat=rtk->sol.stat;
         ins->gstat=SOLQ_NONE;
         ins->ns=0;
 #if REBOOT
@@ -257,6 +258,6 @@ extern int tcigpos(const prcopt_t *opt,const obsd_t *obs,int n,const nav_t *nav,
         }
     }
 exit:
-    free(P); return info;
+    return info;
 }
 

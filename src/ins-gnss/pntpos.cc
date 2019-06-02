@@ -160,7 +160,7 @@ extern int ionocorr(gtime_t time, const nav_t *nav, int sat, const double *pos,
     trace(4,"ionocorr: time=%s opt=%d sat=%2d pos=%.3f %.3f azel=%.3f %.3f\n",
           time_str(time,3),ionoopt,sat,pos[0]*R2D,pos[1]*R2D,azel[0]*R2D,
           azel[1]*R2D);
-    
+
     /* broadcast model */
     if (ionoopt==IONOOPT_BRDC) {
         *ion=ionmodel(time,nav->ion_gps,pos,azel);
@@ -203,10 +203,11 @@ extern int ionocorr(gtime_t time, const nav_t *nav, int sat, const double *pos,
 extern int tropcorr(gtime_t time, const nav_t *nav, const double *pos,
                     const double *azel, int tropopt, double *trp, double *var)
 {
+
     trace(4,"tropcorr: time=%s opt=%d pos=%.3f %.3f azel=%.3f %.3f\n",
           time_str(time,3),tropopt,pos[0]*R2D,pos[1]*R2D,azel[0]*R2D,
           azel[1]*R2D);
-    
+
     /* saastamoinen model */
     if (tropopt==TROPOPT_SAAS||tropopt==TROPOPT_EST||tropopt==TROPOPT_ESTG) {
         *trp=tropmodel(time,pos,azel,REL_HUMI);
@@ -816,9 +817,6 @@ extern int pntpos(const obsd_t *obs, int n, const nav_t *nav,const prcopt_t *opt
         return 0;
     }
     trace(3,"pntpos  : tobs=%s n=%d\n",time_str(obs[0].time,3),n);
-
-    trace(4,"obs=\n"); traceobs(4,obs,n);
-    trace(5,"nav=\n"); tracenav(5,nav);
     
     sol->time=obs[0].time; msg[0]='\0';
     
