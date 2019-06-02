@@ -40,6 +40,7 @@
 *-----------------------------------------------------------------------------*/
 #include <stdarg.h>
 #include <carvig.h>
+#include <include/carvig.h>
 
 /* constants/macros ----------------------------------------------------------*/
 #define VAR_POS     SQR(30.0)  /* initial variance of receiver pos (m^2) */
@@ -68,6 +69,8 @@
 #define THRES_INHERIT_TIME 1.5 /* threshold of ambiguity inherit */
 #define THRES_INHERIT_BIAS 1.0 /* threshold of ambiguity inherit */
 #define INHERIT_AMB 0          /* ambiguity inherit option */
+#define MIN_ARC_GAP     300.0  /* min arc gap (s) */
+#define FIX_THRES       0.129  /* fix threshold (cycle): p0=0.9999 */
 
 #define TTOL_MOVEB  (1.0+2*DTTOL)
 /* time sync tolerance for moving-baseline (s) */
@@ -1501,6 +1504,9 @@ static int ddres(rtk_t *rtk, const nav_t *nav, const obsd_t *obs, double dt,cons
             /* double difference satellite */
             if (refsat) {
 
+                if (refsat[m][f]!=sat[i]) {
+                    trace(3,"reference satelite change: sat=%3d->%3d  f=%2d",refsat[m][f],sat[i],f);
+                }
                 /* set double difference reference satelite */
                 refsat[m][f]=sat[i];
             }
@@ -2236,15 +2242,126 @@ static int inheritambwl(rtk_t *rtk,const ddsat_t *wlsat,const double *wl,
 #endif
     return 0;
 }
+/* wave length of LC (m) -----------------------------------------------------*/
+static double lam_LC(int i, int j, int k)
+{
+    const double f1=FREQ1,f2=FREQ2,f5=FREQ5;
+    return CLIGHT/(i*f1+j*f2+k*f5);
+}
+/* carrier-phase LC (m) ------------------------------------------------------*/
+static double L_LC(int i, int j, int k, const double *Li, const double *Lj)
+{
+    const double f1=FREQ1,f2=FREQ2,f5=FREQ5;
+    double L1,L2,L5;
+
+    if ((i&&(!Li[0]||!Lj[0]))||(j&&(!Li[1]||!Lj[1]))||(k&&(!Li[2]||!Lj[2]))) {
+        return 0.0;
+    }
+    L1=CLIGHT/f1*(Li[0]-Lj[0]);
+    L2=CLIGHT/f2*(Li[1]-Lj[1]);
+    L5=CLIGHT/f5*(Li[2]-Lj[2]);
+    return (i*f1*L1+j*f2*L2+k*f5*L5)/(i*f1+j*f2+k*f5);
+}
+/* pseudorange LC (m) --------------------------------------------------------*/
+static double P_LC(int i, int j, int k, const double *Pi, const double *Pj)
+{
+    const double f1=FREQ1,f2=FREQ2,f5=FREQ5;
+    double P1,P2,P5;
+
+    if ((i&&(!Pi[0]||!Pj[0]))||(j&&(!Pi[1]||!Pj[1]))||(k&&(!Pi[2]||!Pj[2]))) {
+        return 0.0;
+    }
+    P1=Pi[0]-Pj[0];
+    P2=Pi[1]-Pj[1];
+    P5=Pi[2]-Pj[2];
+    return (i*f1*P1+j*f2*P2+k*f5*P5)/(i*f1+j*f2+k*f5);
+}
+/* single-difference noise variance ------------------------------------------*/
+static double SD_var(double var, double el)
+{
+    double sinel=sin(el);
+    return 2.0*(var+var/sinel/sinel);
+}
+/* noise variance of LC (m) --------------------------------------------------*/
+static double var_LC(int i, int j, int k, double sig)
+{
+    const double f1=FREQ1,f2=FREQ2,f5=FREQ5;
+    return (SQR(i*f1)+SQR(j*f2)+SQR(k*f5))/SQR(i*f1+j*f2+k*f5)*SQR(sig);
+}
+/* average LC ----------------------------------------------------------------*/
+static void average_LC(rtk_t *rtk, const obsd_t *obs, const int *sat,
+                       const int *iu, const int *ir, int ns, const nav_t *nav,
+                       const double *azel)
+{
+    ambc_t *amb;
+    double LC1,var1,err=rtk->opt.err[1]*rtk->opt.eratio[0];
+    int i,j,k,f,flag=0;
+
+    for (i=0;i<ns;i++) {
+        j=iu[i]; k=ir[i];
+
+        /* WL carrier and code LC (m) */
+        LC1=L_LC(1,-1,0,obs[j].L,obs[k].L)-P_LC(1,1,0,obs[j].P,obs[k].P);
+
+        /* measurement noise variance (m) */
+        var1=SD_var(var_LC(1,1,0,err),azel[1+2*iu[i]]);
+
+        amb=rtk->ambc+sat[i]-1;
+
+        for (flag=0,f=0;f<NF(&rtk->opt);f++) {
+            if (rtk->ssat[sat[i]-1].slip[f]) flag=1;
+        }
+        if (flag) continue;
+
+        if (amb->n[0]==0||fabs(timediff(amb->epoch[0],obs[0].time))>MIN_ARC_GAP) {
+            amb->fixcnt=0;
+            if (LC1) {
+                amb->n[0]=1;
+                amb->LC[0]=LC1;
+                amb->LCv[0]=var1;
+            }
+        }
+        else { /* averaging */
+            if (LC1) {
+                amb->LC [0]+=(LC1-amb->LC[0])/(++amb->n[0]);
+                amb->LCv[0]+=(var1-amb->LCv[0])/amb->n[0];
+            }
+        }
+        amb->epoch[0]=obs[0].time;
+    }
+}
+/* get WL ambiguity by average LC--------------------------------------------*/
+static int getWLaveLC(const rtk_t *rtk,const ddsat_t *wlsat,int nw,double *wlbias,
+                      double *wlvar)
+{
+    double lam_W=lam_LC(1,-1,0);
+    const ambc_t *amb1,*amb2;
+    int i,k,sat1,sat2;
+
+    for (i=0,k=0;i<nw;i++) {
+        sat1=wlsat[i].sat1; sat2=wlsat[i].sat2;
+
+        amb1=&rtk->ambc[sat1-1];
+        amb2=&rtk->ambc[sat2-1];
+
+        wlbias[k]=(amb1->LC[0]-amb2->LC[0])/lam_W;
+        wlvar [k]=(amb1->LCv[0]/amb1->n[0]+amb2->LCv[0]/amb2->n[0])/SQR(lam_W);
+        k++;
+    }
+    return k;
+}
 /* resolve WL integer ambiguity by LAMBDA------------------------------------*/
 static int resamb_WL(rtk_t *rtk, double *Qy, double *y, int ny, int *index,const double *D,
                      int nw, ddsat_t *ddsat,const ddsat_t *wlsat,
-                     double *dxwl,double *Qywl)
+                     double *dxwl,double *Qywl,int *nny)
 {
-    int i,j,k,info=0,na,tc,inherit=0;
+    int i,j,k,info=0,na,tc,inherit=0,wln=0;
     double *Qw,*wl,*b,*v,*R,*r,*H,s[2];
+    double *wlbias,*wlvar;
 
     trace(3,"resamb_WL:\n");
+
+    rtk->sol.wlratio=0.0;
 
     if (nw<=2) {
         errmsg(rtk,"no valid WL double-difference\n");
@@ -2256,12 +2373,22 @@ static int resamb_WL(rtk_t *rtk, double *Qy, double *y, int ny, int *index,const
     Qw=mat(ny,ny); wl=mat(ny,1); H=zeros(ny,ny); v=mat(ny,1);
     b=mat(ny,2); r=mat(ny,1);
     R=zeros(ny,ny);
+    wlbias=mat(ny,1); wlvar=mat(ny,1);
 
     /* covariance matrix of WL ambiguity */
     matmul33("TNN",D,Qy,D,nw,ny,ny,nw,Qw);
 
     trace(3,"Qw=\n");
     tracemat(3,Qw,nw,nw,12,6);
+
+    /* get WL ambiguity */
+    wln=getWLaveLC(rtk,wlsat,nw,wlbias,wlvar);
+
+    trace(3,"wlbias=\n");
+    tracemat(3,wlbias,1,wln,12,5);
+
+    trace(3,"wlvar=\n");
+    tracemat(3,wlvar,1,wln,12,5);
 
     for (i=0;i<nw;i++) {
 
@@ -2271,16 +2398,16 @@ static int resamb_WL(rtk_t *rtk, double *Qy, double *y, int ny, int *index,const
     /* lambda/mlambda integer least-square estimation */
     if (!lambda(nw,2,wl+na,Qw,b,s)) {
 
-        trace(4,"WL-N(0)=\n"); tracemat(4,wl+na,1,nw,10,3);
-        trace(4,"WL-N(1)=\n"); tracemat(4,b    ,1,nw,10,3);
-        trace(4,"WL-N(2)=\n"); tracemat(4,b+nw ,1,nw,10,3);
+        trace(3,"WL-N(0)=\n"); tracemat(3,wl+na,1,nw,10,3);
+        trace(3,"WL-N(1)=\n"); tracemat(3,b    ,1,nw,10,3);
+        trace(3,"WL-N(2)=\n"); tracemat(3,b+nw ,1,nw,10,3);
 
         rtk->sol.wlratio=s[0]>0?(float)(s[1]/s[0]):0.0f;
         if (rtk->sol.wlratio>999.9f) {
             rtk->sol.wlratio=999.9f;
         }
         /* validation by popular ratio-test */
-        if ((s[0]<=0.0||s[1]/s[0]>=rtk->opt.thresar[0])||(inherit=inheritambwl(rtk,wlsat,wl+na,nw,b,s))) {
+        if ((s[0]>0.0&&s[1]/s[0]>=rtk->opt.thresar[0])||(inherit=inheritambwl(rtk,wlsat,wl+na,nw,b,s))) {
             if (inherit) {
                 rtk->sol.wlratio=(float)(s[1]/s[0]);
             }
@@ -2306,6 +2433,8 @@ static int resamb_WL(rtk_t *rtk, double *Qy, double *y, int ny, int *index,const
                     /* output solution */
                     matcpy(dxwl,y , 1,na);
                     matcpy(Qywl,Qy,ny,ny);
+
+                    if (nny) *nny=ny;
 
                     rtk->sol.stat=SOLQ_WLFIX;
                     /* fix ok */
@@ -2371,7 +2500,7 @@ static int inheritamb(rtk_t *rtk, ddsat_t *ddsat,const double *y,const double *Q
 /* resolve integer ambiguity by LAMBDA --------------------------------------*/
 static int resamb_LAMBDA(rtk_t *rtk, double *bias, double *xa, ddsat_t *ddsat,int *namb,
                          double *dxwl,double *Qywl,const int *vflg,int nv,int fixnolock,
-                         int *nny)
+                         int *nny,int fixwl)
 {
     prcopt_t *opt=&rtk->opt;
     insstate_t *ins=&rtk->ins;
@@ -2391,7 +2520,6 @@ static int resamb_LAMBDA(rtk_t *rtk, double *bias, double *xa, ddsat_t *ddsat,in
         return 0;
     }
     rtk->sol.ratio=0.0;
-    rtk->sol.wlratio=0.0;
 
     /* reset number of dd-ambiguity */
     *namb=0;
@@ -2423,8 +2551,6 @@ static int resamb_LAMBDA(rtk_t *rtk, double *bias, double *xa, ddsat_t *ddsat,in
     Qb=mat(nb,nb); Qab=mat(na,nb); QQ=mat(na,nb);
     DD=zeros(ny,ny); index=imat(nb,2);
 
-    if (nny) *nny=ny;
-
     /* transform single to double-differenced phase-bias (y=D'*x, Qy=D'*P*D) */
     matmul("TN",ny, 1,nx,1.0,D ,x,0.0,y );
     matmul("TN",ny,nx,nx,1.0,D ,P,0.0,DP);
@@ -2434,10 +2560,10 @@ static int resamb_LAMBDA(rtk_t *rtk, double *bias, double *xa, ddsat_t *ddsat,in
     if (opt->modear==ARMODE_WLNL) {
 
         /* L1/L2 ambiguity to WL-ambiguity transform matrix */
-        if ((nw=ddmat_WL(na,nb,ddsat,DD,index,wlsat))) {
+        if (fixwl&&(nw=ddmat_WL(na,nb,ddsat,DD,index,wlsat))) {
 
             /* fix WL ambiguity */
-            resamb_WL(rtk,Qy,y,ny,index,DD,nw,ddsat,wlsat,dxwl,Qywl);
+            resamb_WL(rtk,Qy,y,ny,index,DD,nw,ddsat,wlsat,dxwl,Qywl,nny);
         }
     }
     /* phase-bias covariance (Qb) and real-parameters to bias covariance (Qab) */
@@ -2457,7 +2583,7 @@ static int resamb_LAMBDA(rtk_t *rtk, double *bias, double *xa, ddsat_t *ddsat,in
         if (rtk->sol.ratio>999.9) rtk->sol.ratio=999.9f;
 
         /* validation by popular ratio-test */
-        if ((s[0]<=0.0||s[1]/s[0]>=opt->thresar[0])||(inherit=inheritamb(rtk,ddsat,y+na,Qy,na,nb,b,s))) {
+        if ((s[0]>0.0&&s[1]/s[0]>=opt->thresar[0])||(inherit=inheritamb(rtk,ddsat,y+na,Qy,na,nb,b,s))) {
 
             if (inherit) {
                 rtk->sol.ratio=(float)(s[1]/s[0]);
@@ -2568,8 +2694,8 @@ static int resamb_LAMBDA2(rtk_t *rtk, double *bias, double *xa, ddsat_t *ddsat,i
 
     trace(3,"resamb_LAMBDA2:\n");
 #if 1
-    if ((nb=resamb_LAMBDA(rtk,bias,xa,ddsat,namb,dxwl,Qywl,vflg,nv,1,nny))<MINFIXC) {
-        nb=resamb_LAMBDA(rtk,bias,xa,ddsat,namb,dxwl,Qywl,vflg,nv,0,nny);
+    if ((nb=resamb_LAMBDA(rtk,bias,xa,ddsat,namb,dxwl,Qywl,vflg,nv,1,nny,1))<MINFIXC) {
+        nb=resamb_LAMBDA(rtk,bias,xa,ddsat,namb,dxwl,Qywl,vflg,nv,0,NULL,0);
     }
     return nb;
 #else
@@ -2787,6 +2913,9 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
             }
         }
     }
+    /* average linear combination observation */
+    average_LC(rtk,obs,sat,iu,ir,ns,nav,azel);
+
     tc?insp2antp(&insp,rr):matcpy(rr,xp,1,3);
 
     if (stat!=SOLQ_NONE&&zdres(0,obs,nu,rs,dts,svh,nav,rr,opt,0,y,e,azel)) {
@@ -2808,11 +2937,12 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
             /* update ambiguity control struct */
             rtk->sol.ns=0;
             for (i=0;i<ns;i++) for (f=0;f<nf;f++) {
-                    if (!rtk->ssat[sat[i]-1].vsat[f]) continue;
-                    rtk->ssat[sat[i]-1].lock[f]++;
-                    rtk->ssat[sat[i]-1].outc[f]=0;
-                    if (f==0) rtk->sol.ns++; /* valid satellite count by L1 */
-                }
+                if (!rtk->ssat[sat[i]-1].vsat[f]) continue;
+                rtk->ssat[sat[i]-1].lock[f]++;
+                rtk->ssat[sat[i]-1].outc[f]=0;
+                if (f==0) rtk->sol.ns++; /* valid satellite count by L1 */
+            }
+            /* lack of valid satellites */
             if (rtk->sol.ns<3) {
 
                 /* valid satellite count by L1-pseudorange */
@@ -2820,10 +2950,6 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
                     for (f=0;f<nf;f++) if (rtk->ssat[sat[i]-1].vsatc[f]) break;
                     rtk->sol.ns++;
                 }
-            }
-            /* lack of valid satellites */
-            if (rtk->sol.ns<3) {
-
                 /* tightly-coupled is available though lack satellite */
                 if (tc) stat=SOLQ_FLOAT; else stat=SOLQ_NONE;
 
@@ -2832,6 +2958,10 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
                     rtk->sol.ns=(unsigned char)m;
                     stat=SOLQ_DGPS;
                 }
+                rtk->sol.stat=(unsigned char)stat;
+            }
+            else {
+                rtk->sol.stat=SOLQ_FLOAT;
             }
         }
         else {
@@ -2929,7 +3059,9 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr,const nav_t *nav
                 }
                 /* set fix flag */
                 stat=SOLQ_FIX;
-                rtk->sol.ratio=rtk->sol.wlratio;
+                if (rtk->sol.stat==SOLQ_WLFIX) {
+                    rtk->sol.ratio=rtk->sol.wlratio;
+                }
             }
         }
     }
