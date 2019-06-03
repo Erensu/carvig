@@ -448,10 +448,10 @@ extern "C"{
 #define SOLQ_PPP     6                  /* solution status: PPP */
 #define SOLQ_DR      7                  /* solution status: dead reconing */
 #define SOLQ_DOP     8                  /* solution status: doppler measurement aid */
-#define SOLQ_WLFIX   9                  /* solution status: WL ambiguity fix status */
-#define SOLQ_INHERIT_WL 10              /* solution status: WL ambiguity inherit fix */
+#define SOLQ_INHERIT 9                  /* solution status: ambiguity inherit fix status */
+#define SOLQ_ROUND   10                 /* solution status: ambiguity round fix */
 #define SOLQ_VO      11                 /* solution status: visual odometry status aid */
-#define SOLQ_INHERIT    12              /* solution status: ambiguity inherit fix */
+#define SOLQ_GRTH    12                 /* solution status: ground truth status */
 #define SOLQ_WAAS    13                 /* solution status: solution calculated using corrections from an WAAS */
 #define SOLQ_PROP    14                 /* solution status: propagated by a kalman filter without new observations */
 #define SOLQ_OMIN    15                 /* solution status: OmniSTAR VBS position */
