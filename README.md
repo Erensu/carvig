@@ -50,4 +50,4 @@ QQ  ：1971129844
 邮箱：sujinglan@whu.edu.cn
 
 # 备注
-若对ignav专业版本有需求可咨询作者
+若对carvig专业版本有需求可咨询作者
